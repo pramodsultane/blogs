@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Modular AWS VPC Architecture with Terraform — Pramod's Blogs</title>
+  <meta name="description" content="Build reusable, production-ready Terraform VPC modules with multi-tier subnets, NAT gateways, and consistent tagging across multiple AWS regions." />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0%25' stop-color='%23a855f7'/><stop offset='100%25' stop-color='%23e879f9'/></linearGradient></defs><rect width='32' height='32' rx='8' fill='url(%23g)'/><text x='16' y='23' font-family='Arial,sans-serif' font-size='19' font-weight='900' fill='white' text-anchor='middle'>P</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --font:       'Poppins', sans-serif;
+      --bg:         #07050f;
+      --bg-card:    #0f0919;
+      --border:     #2d1b4e;
+      --primary:    #a855f7;
+      --primary-dim:#9333ea;
+      --secondary:  #e879f9;
+      --green:      #10b981;
+      --orange:     #f59e0b;
+      --red:        #ef4444;
+      --text:       #f0e8ff;
+      --text-muted: #6b5b8a;
+      --text-dim:   #a899c0;
+      --code-bg:    #0a0714;
+      --radius:     10px;
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: var(--font); background: var(--bg); color: var(--text); line-height: 1.7; }
+    a { color: inherit; text-decoration: none; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--primary-dim); }
+
+    /* NAV */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(7,5,15,.9); backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 clamp(1rem,4vw,3rem);
+    }
+    .nav-inner { max-width: 900px; margin: auto; height: 60px; display: flex; align-items: center; justify-content: space-between; }
+    .logo { display: flex; align-items: center; gap: 9px; font-size: 1rem; font-weight: 700; }
+    .logo-icon { width: 30px; height: 30px; background: linear-gradient(135deg, var(--primary), var(--secondary)); border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: .9rem; }
+    .logo span { color: var(--primary); }
+    .back-link { font-size: .82rem; color: var(--text-muted); font-weight: 500; transition: color .2s; }
+    .back-link:hover { color: var(--primary); }
+
+    /* POST HEADER */
+    .post-hero { padding: 56px clamp(1rem,4vw,3rem) 44px; max-width: 900px; margin: auto; }
+    .post-tags { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 20px; }
+    .tag { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; padding: 3px 9px; border-radius: 4px; }
+    .tag-tf     { background: rgba(168,85,247,.15); color: #c084fc; }
+    .tag-aws    { background: rgba(255,153,0,.15);  color: #ffaa33; }
+    .tag-iac    { background: rgba(124,58,237,.15); color: #a78bfa; }
+    .post-title { font-size: clamp(1.75rem,4vw,2.6rem); font-weight: 800; line-height: 1.2; letter-spacing: -.5px; margin-bottom: 14px; }
+    .post-subtitle { font-size: 1rem; color: var(--text-dim); line-height: 1.65; margin-bottom: 26px; }
+    .post-meta {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 16px;
+      padding: 16px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+      font-size: .8rem; color: var(--text-muted);
+    }
+    .author-chip { display: flex; align-items: center; gap: 9px; }
+    .author-avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), var(--secondary)); display: flex; align-items: center; justify-content: center; font-size: .68rem; font-weight: 800; color: #fff; }
+    .author-name  { font-size: .85rem; font-weight: 700; color: var(--text); }
+    .author-title { font-size: .72rem; color: var(--text-muted); }
+    .meta-div { color: var(--border); }
+
+    /* POST BODY */
+    .post-body { max-width: 900px; margin: 0 auto; padding: 10px clamp(1rem,4vw,3rem) 80px; }
+    .post-body h2 { font-size: 1.45rem; font-weight: 800; margin: 46px 0 14px; letter-spacing: -.3px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+    .post-body h3 { font-size: 1.1rem; font-weight: 700; margin: 30px 0 10px; }
+    .post-body p  { margin-bottom: 16px; color: var(--text-dim); font-weight: 400; }
+    .post-body a  { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
+    .post-body ul, .post-body ol { padding-left: 1.4rem; margin-bottom: 16px; color: var(--text-dim); }
+    .post-body li { margin-bottom: 5px; }
+    .post-body strong { color: var(--text); font-weight: 600; }
+    .post-body code {
+      font-family: 'Cascadia Code','Fira Code','Consolas',monospace;
+      background: rgba(168,85,247,.1); border: 1px solid rgba(168,85,247,.2);
+      border-radius: 4px; padding: 2px 6px; font-size: .84em; color: var(--primary);
+    }
+    .post-body pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; overflow-x: auto; margin: 6px 0 24px; }
+    .post-body pre code { background: none; border: none; padding: 0; color: #c4b5fd; font-size: .855rem; line-height: 1.7; }
+    .code-header {
+      display: flex; align-items: center; justify-content: space-between;
+      background: #0a0614; border: 1px solid var(--border); border-bottom: none;
+      border-radius: var(--radius) var(--radius) 0 0;
+      padding: 9px 18px; font-size: .72rem; color: var(--text-muted);
+      font-family: 'Cascadia Code','Consolas',monospace; margin-top: 22px;
+    }
+    .code-header + pre { margin-top: 0; border-radius: 0 0 var(--radius) var(--radius); }
+    .code-dots { display: flex; gap: 5px; }
+    .code-dots span { width: 10px; height: 10px; border-radius: 50%; }
+    .code-dots .r { background: #ff5f57; }
+    .code-dots .y { background: #febc2e; }
+    .code-dots .g { background: #28c840; }
+    .callout { display: flex; gap: 13px; padding: 16px 18px; border-radius: var(--radius); border-left: 4px solid; margin: 22px 0; }
+    .callout-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 2px; }
+    .callout p { margin: 0; font-size: .87rem; }
+    .callout.info   { background: rgba(168,85,247,.07); border-color: var(--primary); }
+    .callout.warn   { background: rgba(245,158,11,.07); border-color: var(--orange); }
+    .callout.tip    { background: rgba(16,185,129,.07); border-color: var(--green); }
+    .callout.info   p { color: #d8b4fe; }
+    .callout.warn   p { color: #fcd68a; }
+    .callout.tip    p { color: #6ee7b7; }
+    .post-body hr { border: none; border-top: 1px solid var(--border); margin: 38px 0; }
+    .post-body table { width: 100%; border-collapse: collapse; font-size: .875rem; margin: 22px 0; }
+    .post-body th { background: var(--bg-card); padding: 11px 14px; text-align: left; font-weight: 700; font-size: .7rem; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+    .post-body td { padding: 11px 14px; border-bottom: 1px solid var(--border); color: var(--text-dim); }
+    .post-body tr:last-child td { border-bottom: none; }
+    .post-body h2 .anchor, .post-body h3 .anchor { opacity: 0; color: var(--primary-dim); text-decoration: none; font-weight: 400; font-size: .8em; margin-left: 7px; transition: opacity .2s; }
+    .post-body h2:hover .anchor, .post-body h3:hover .anchor { opacity: 1; }
+
+    /* POST FOOTER */
+    .post-footer { max-width: 900px; margin: 0 auto 60px; padding: 0 clamp(1rem,4vw,3rem); }
+    .post-footer-inner { border-top: 1px solid var(--border); padding-top: 32px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
+    .back-btn { display: inline-flex; align-items: center; gap: 7px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 9px 18px; font-size: .82rem; font-weight: 500; color: var(--text-dim); font-family: var(--font); transition: border-color .2s, color .2s; }
+    .back-btn:hover { border-color: var(--primary); color: var(--primary); }
+
+    /* FOOTER */
+    footer { border-top: 1px solid var(--border); padding: 28px clamp(1rem,4vw,3rem); text-align: center; }
+    .footer-inner { max-width: 900px; margin: auto; }
+    .footer-logo { display: flex; align-items: center; justify-content: center; gap: 9px; font-weight: 700; font-size: .95rem; margin-bottom: 8px; }
+    .footer-logo span { color: var(--primary); }
+    footer p { font-size: .76rem; color: var(--text-muted); }
+    /* Progress bar */
+    #progress-bar { position: fixed; top: 0; left: 0; height: 3px; width: 0%; background: linear-gradient(90deg, var(--primary), var(--secondary)); z-index: 9999; transition: width .08s linear; pointer-events: none; }
+
+    /* Share section */
+    .share-section { max-width: 900px; margin: 0 auto 28px; padding: 0 clamp(1rem,4vw,3rem); }
+    .share-inner { border-top: 1px solid var(--border); padding-top: 28px; }
+    .share-label { font-size: .72rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 600; margin-bottom: 14px; }
+    .share-btns { display: flex; flex-wrap: wrap; gap: 10px; }
+    .share-btn { display: inline-flex; align-items: center; gap: 8px; padding: 8px 18px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-dim); font-size: .8rem; font-weight: 600; cursor: pointer; font-family: var(--font); transition: border-color .2s, color .2s; }
+    .share-btn:hover { border-color: var(--primary); color: var(--primary); }
+    .share-btn svg { width: 14px; height: 14px; fill: currentColor; flex-shrink: 0; }
+    .share-btn.copied { border-color: #10b981; color: #10b981; }
+
+    /* Prev/Next nav */
+    .pn-nav { max-width: 900px; margin: 0 auto 32px; padding: 0 clamp(1rem,4vw,3rem); display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .pn-link { display: block; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; transition: border-color .2s; text-decoration: none; }
+    .pn-link:hover { border-color: rgba(168,85,247,.5); }
+    .pn-link.next { text-align: right; }
+    .pn-dir { font-size: .68rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 600; margin-bottom: 6px; }
+    .pn-title { font-size: .87rem; font-weight: 700; color: var(--text-dim); transition: color .2s; }
+    .pn-link:hover .pn-title { color: var(--primary); }
+
+    /* Back to top */
+    #btt { position: fixed; bottom: 28px; right: 28px; width: 42px; height: 42px; background: linear-gradient(135deg, var(--primary), var(--secondary)); border: none; border-radius: 50%; color: #fff; font-size: 1rem; font-weight: 700; cursor: pointer; opacity: 0; transform: translateY(14px); transition: opacity .3s, transform .3s; z-index: 200; box-shadow: 0 4px 18px rgba(168,85,247,.45); font-family: var(--font); }
+    #btt.show { opacity: 1; transform: translateY(0); }
+    #btt:hover { filter: brightness(1.15); }
+
+    @media (max-width: 600px) { .pn-nav { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<div id="progress-bar"></div>
+
+<nav>
+  <div class="nav-inner">
+    <a href="../index.html" class="logo">
+      <div class="logo-icon">🚀</div>
+      Pramod's <span>Blogs</span>
+    </a>
+    <a href="../index.html" class="back-link">← Back to all posts</a>
+  </div>
+</nav>
+
+<header class="post-hero">
+  <div class="post-tags">
+    <span class="tag tag-tf">Terraform</span>
+    <span class="tag tag-aws">AWS</span>
+    <span class="tag tag-iac">IaC</span>
+  </div>
+  <h1 class="post-title">Modular AWS VPC Architecture with Terraform</h1>
+  <p class="post-subtitle">
+    Build reusable, production-ready VPC modules with multi-tier subnets, NAT gateways,
+    flow logs, and consistent tagging — deployable across any region in minutes.
+  </p>
+  <div class="post-meta">
+    <div class="author-chip">
+      <div class="author-avatar">PK</div>
+      <div>
+        <div class="author-name">Pramod</div>
+        <div class="author-title">Cloud &amp; DevOps Engineer</div>
+      </div>
+    </div>
+    <span class="meta-div">|</span>
+    <span>📅 1 March 2026</span>
+    <span class="meta-div">|</span>
+    <span id="read-time">📖 9 min read</span>
+  </div>
+</header>
+
+<article class="post-body">
+
+  <p>
+    A well-designed VPC is the foundation of any secure, scalable AWS workload. Yet most teams
+    copy-paste one-off VPC configs that become impossible to maintain at scale. In this post I'll walk
+    through a <strong>reusable Terraform module</strong> that provisions a production-grade VPC with
+    multi-tier subnets, NAT gateways, VPC flow logs, and sensible defaults — ready to drop into any
+    environment with a single module call.
+  </p>
+
+  <h2>Architecture Overview <a href="#architecture" class="anchor" id="architecture">#</a></h2>
+
+  <p>The module creates three subnet tiers across configurable Availability Zones:</p>
+
+  <ul>
+    <li><strong>Public subnets</strong> — Load balancers, NAT gateways, bastion hosts</li>
+    <li><strong>Private subnets</strong> — Application servers, EKS nodes, Lambda functions</li>
+    <li><strong>Isolated subnets</strong> — RDS, ElastiCache, MSK — no internet access whatsoever</li>
+  </ul>
+
+  <div class="callout info">
+    <span class="callout-icon">💡</span>
+    <p>The module assumes a <strong>/16 CIDR block</strong> and auto-calculates all subnet CIDRs
+    using <code>cidrsubnet()</code>, so you never have to do the math manually.</p>
+  </div>
+
+  <table>
+    <thead><tr><th>Tier</th><th>Internet Access</th><th>Route Table</th><th>Typical Resources</th></tr></thead>
+    <tbody>
+      <tr><td>Public</td><td>Direct (IGW)</td><td>→ Internet Gateway</td><td>ALB, NAT GW, Bastion</td></tr>
+      <tr><td>Private</td><td>Outbound via NAT</td><td>→ NAT Gateway</td><td>EKS, EC2, Lambda</td></tr>
+      <tr><td>Isolated</td><td>None</td><td>Local only</td><td>RDS, ElastiCache, MSK</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Module File Structure <a href="#structure" class="anchor" id="structure">#</a></h2>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>directory layout</span>
+  </div>
+  <pre><code>modules/
+└── vpc/
+    ├── main.tf          # Resources: VPC, subnets, gateways, routes
+    ├── variables.tf     # Input variables
+    ├── outputs.tf       # Exported values
+    └── versions.tf      # Provider & Terraform version constraints
+
+environments/
+├── dev/main.tf          # Calls the module with dev-specific values
+└── prod/main.tf         # Calls the module with prod-specific values</code></pre>
+
+  <h2>variables.tf <a href="#variables" class="anchor" id="variables">#</a></h2>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>modules/vpc/variables.tf</span>
+  </div>
+  <pre><code>variable "name" {
+  description = "Name prefix applied to all resources"
+  type        = string
+}
+
+variable "cidr_block" {
+  description = "CIDR block for the VPC (e.g. 10.0.0.0/16)"
+  type        = string
+  default     = "10.0.0.0/16"
+}
+
+variable "azs" {
+  description = "List of Availability Zones to deploy subnets into"
+  type        = list(string)
+  # Example: ["us-east-1a", "us-east-1b", "us-east-1c"]
+}
+
+variable "enable_nat_gateway" {
+  description = "Provision a NAT Gateway for private subnet egress"
+  type        = bool
+  default     = true
+}
+
+variable "single_nat_gateway" {
+  description = "Use one NAT GW for all AZs (saves cost in non-prod)"
+  type        = bool
+  default     = false
+}
+
+variable "enable_flow_logs" {
+  description = "Enable VPC Flow Logs to CloudWatch"
+  type        = bool
+  default     = true
+}
+
+variable "tags" {
+  description = "Additional tags merged into all resources"
+  type        = map(string)
+  default     = {}
+}</code></pre>
+
+  <h2>main.tf <a href="#main" class="anchor" id="main">#</a></h2>
+
+  <h3>VPC, Subnets &amp; Gateways</h3>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>modules/vpc/main.tf</span>
+  </div>
+  <pre><code>locals {
+  az_count      = length(var.azs)
+  common_tags   = merge({ Module = "vpc", Name = var.name }, var.tags)
+}
+
+# ── VPC ──────────────────────────────────────────────────────────
+resource "aws_vpc" "this" {
+  cidr_block           = var.cidr_block
+  enable_dns_support   = true
+  enable_dns_hostnames = true
+  tags                 = merge(local.common_tags, { Name = "${var.name}-vpc" })
+}
+
+# ── Internet Gateway ─────────────────────────────────────────────
+resource "aws_internet_gateway" "this" {
+  vpc_id = aws_vpc.this.id
+  tags   = merge(local.common_tags, { Name = "${var.name}-igw" })
+}
+
+# ── Public Subnets ───────────────────────────────────────────────
+resource "aws_subnet" "public" {
+  count                   = local.az_count
+  vpc_id                  = aws_vpc.this.id
+  cidr_block              = cidrsubnet(var.cidr_block, 4, count.index)
+  availability_zone       = var.azs[count.index]
+  map_public_ip_on_launch = true
+  tags = merge(local.common_tags, {
+    Name = "${var.name}-public-${var.azs[count.index]}"
+    Tier = "public"
+  })
+}
+
+# ── Private Subnets ──────────────────────────────────────────────
+resource "aws_subnet" "private" {
+  count             = local.az_count
+  vpc_id            = aws_vpc.this.id
+  cidr_block        = cidrsubnet(var.cidr_block, 4, count.index + local.az_count)
+  availability_zone = var.azs[count.index]
+  tags = merge(local.common_tags, {
+    Name = "${var.name}-private-${var.azs[count.index]}"
+    Tier = "private"
+  })
+}
+
+# ── Isolated Subnets ─────────────────────────────────────────────
+resource "aws_subnet" "isolated" {
+  count             = local.az_count
+  vpc_id            = aws_vpc.this.id
+  cidr_block        = cidrsubnet(var.cidr_block, 4, count.index + local.az_count * 2)
+  availability_zone = var.azs[count.index]
+  tags = merge(local.common_tags, {
+    Name = "${var.name}-isolated-${var.azs[count.index]}"
+    Tier = "isolated"
+  })
+}
+
+# ── NAT Gateways ─────────────────────────────────────────────────
+resource "aws_eip" "nat" {
+  count  = var.enable_nat_gateway ? (var.single_nat_gateway ? 1 : local.az_count) : 0
+  domain = "vpc"
+  tags   = merge(local.common_tags, { Name = "${var.name}-nat-eip-${count.index}" })
+}
+
+resource "aws_nat_gateway" "this" {
+  count         = var.enable_nat_gateway ? (var.single_nat_gateway ? 1 : local.az_count) : 0
+  allocation_id = aws_eip.nat[count.index].id
+  subnet_id     = aws_subnet.public[count.index].id
+  tags          = merge(local.common_tags, { Name = "${var.name}-nat-${count.index}" })
+  depends_on    = [aws_internet_gateway.this]
+}
+
+# ── Route Tables ─────────────────────────────────────────────────
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.this.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.this.id
+  }
+  tags = merge(local.common_tags, { Name = "${var.name}-rt-public" })
+}
+
+resource "aws_route_table" "private" {
+  count  = var.enable_nat_gateway ? (var.single_nat_gateway ? 1 : local.az_count) : local.az_count
+  vpc_id = aws_vpc.this.id
+  dynamic "route" {
+    for_each = var.enable_nat_gateway ? [1] : []
+    content {
+      cidr_block     = "0.0.0.0/0"
+      nat_gateway_id = aws_nat_gateway.this[var.single_nat_gateway ? 0 : count.index].id
+    }
+  }
+  tags = merge(local.common_tags, { Name = "${var.name}-rt-private-${count.index}" })
+}
+
+# ── Route Table Associations ─────────────────────────────────────
+resource "aws_route_table_association" "public" {
+  count          = local.az_count
+  subnet_id      = aws_subnet.public[count.index].id
+  route_table_id = aws_route_table.public.id
+}
+
+resource "aws_route_table_association" "private" {
+  count          = local.az_count
+  subnet_id      = aws_subnet.private[count.index].id
+  route_table_id = aws_route_table.private[var.single_nat_gateway ? 0 : count.index].id
+}
+
+resource "aws_route_table_association" "isolated" {
+  count          = local.az_count
+  subnet_id      = aws_subnet.isolated[count.index].id
+  route_table_id = aws_vpc_main_route_table_id.this  # implicit local-only route
+}
+</code></pre>
+
+  <h3>VPC Flow Logs</h3>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>modules/vpc/main.tf (flow logs section)</span>
+  </div>
+  <pre><code>resource "aws_cloudwatch_log_group" "flow_logs" {
+  count             = var.enable_flow_logs ? 1 : 0
+  name              = "/aws/vpc/flow-logs/${var.name}"
+  retention_in_days = 30
+  tags              = local.common_tags
+}
+
+resource "aws_iam_role" "flow_logs" {
+  count = var.enable_flow_logs ? 1 : 0
+  name  = "${var.name}-vpc-flow-logs-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "vpc-flow-logs.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "flow_logs" {
+  count      = var.enable_flow_logs ? 1 : 0
+  role       = aws_iam_role.flow_logs[0].name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchLogsFullAccess"
+}
+
+resource "aws_flow_log" "this" {
+  count           = var.enable_flow_logs ? 1 : 0
+  vpc_id          = aws_vpc.this.id
+  traffic_type    = "ALL"
+  iam_role_arn    = aws_iam_role.flow_logs[0].arn
+  log_destination = aws_cloudwatch_log_group.flow_logs[0].arn
+}</code></pre>
+
+  <div class="callout warn">
+    <span class="callout-icon">⚠️</span>
+    <p><strong>Cost note:</strong> NAT Gateways are charged per hour (~$0.045/hr) plus per-GB data processing.
+    Use <code>single_nat_gateway = true</code> in dev/staging to reduce costs. Never use a single NAT GW in production — it creates an AZ-level single point of failure.</p>
+  </div>
+
+  <h2>outputs.tf <a href="#outputs" class="anchor" id="outputs">#</a></h2>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>modules/vpc/outputs.tf</span>
+  </div>
+  <pre><code>output "vpc_id" {
+  description = "ID of the created VPC"
+  value       = aws_vpc.this.id
+}
+
+output "vpc_cidr_block" {
+  value = aws_vpc.this.cidr_block
+}
+
+output "public_subnet_ids" {
+  description = "IDs of the public subnets"
+  value       = aws_subnet.public[*].id
+}
+
+output "private_subnet_ids" {
+  description = "IDs of the private subnets"
+  value       = aws_subnet.private[*].id
+}
+
+output "isolated_subnet_ids" {
+  description = "IDs of the isolated (DB) subnets"
+  value       = aws_subnet.isolated[*].id
+}
+
+output "nat_gateway_ids" {
+  value = aws_nat_gateway.this[*].id
+}</code></pre>
+
+  <h2>Using the Module <a href="#usage" class="anchor" id="usage">#</a></h2>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>environments/prod/main.tf</span>
+  </div>
+  <pre><code>module "vpc" {
+  source = "../../modules/vpc"
+
+  name       = "myapp-prod"
+  cidr_block = "10.10.0.0/16"
+  azs        = ["us-east-1a", "us-east-1b", "us-east-1c"]
+
+  enable_nat_gateway = true
+  single_nat_gateway = false   # one NAT GW per AZ for HA
+  enable_flow_logs   = true
+
+  tags = {
+    Environment = "production"
+    Owner       = "platform-team"
+    CostCenter  = "engineering"
+  }
+}
+
+# Use outputs in other resources
+resource "aws_eks_cluster" "this" {
+  name     = "myapp-prod"
+  role_arn = aws_iam_role.eks.arn
+
+  vpc_config {
+    subnet_ids = module.vpc.private_subnet_ids
+  }
+}</code></pre>
+
+  <h2>Best Practices &amp; Tips <a href="#tips" class="anchor" id="tips">#</a></h2>
+
+  <h3>Tagging Strategy</h3>
+  <p>Consistent tagging is non-negotiable for cost allocation and automation. Always include at minimum:
+  <code>Environment</code>, <code>Owner</code>, <code>CostCenter</code>, and <code>ManagedBy = "terraform"</code>.
+  The module enforces <code>ManagedBy</code> automatically via <code>local.common_tags</code>.</p>
+
+  <h3>CIDR Planning</h3>
+  <p>A <code>/16</code> gives you 65,536 IPs split into subnets with a <code>/4</code> offset via
+  <code>cidrsubnet()</code>. For 3 AZs this produces <code>/20</code> subnets (~4,000 IPs each) —
+  ample for most workloads. Adjust the newbits argument if you need smaller or larger blocks.</p>
+
+  <h3>State Backend</h3>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>versions.tf</span>
+  </div>
+  <pre><code>terraform {
+  required_version = ">= 1.6"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+
+  backend "s3" {
+    bucket         = "myapp-terraform-state"
+    key            = "vpc/terraform.tfstate"
+    region         = "us-east-1"
+    encrypt        = true
+    dynamodb_table = "terraform-state-lock"
+  }
+}</code></pre>
+
+  <div class="callout tip">
+    <span class="callout-icon">✅</span>
+    <p><strong>Tip:</strong> Use <code>terraform plan -out=tfplan</code> and always review the plan before
+    applying network changes. A <code>destroy</code> on an active VPC with running workloads will
+    fail gracefully but can leave orphaned ENIs — always deprovision workloads first.</p>
+  </div>
+
+  <hr />
+
+  <h2>Conclusion <a href="#conclusion" class="anchor" id="conclusion">#</a></h2>
+
+  <p>
+    With this module pattern you define your VPC once and deploy it consistently across every
+    environment. The key wins are: <strong>no hardcoded CIDRs</strong>, <strong>HA NAT gateways</strong>
+    with a cost-saving override for non-prod, <strong>automatic flow logs</strong> for security auditing,
+    and clean outputs that plug straight into EKS, RDS, and ALB module calls.
+  </p>
+  <p>
+    Next steps — wire the <code>private_subnet_ids</code> output into an EKS node group or an RDS
+    subnet group, and add a <code>vpc_endpoints</code> block to route S3 and DynamoDB traffic over the
+    AWS backbone instead of the NAT gateway, which will cut data-transfer costs significantly.
+  </p>
+
+</article>
+
+<div class="share-section">
+  <div class="share-inner">
+    <div class="share-label">Share this post</div>
+    <div class="share-btns">
+      <button class="share-btn" onclick="shareLinkedIn()">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+        LinkedIn
+      </button>
+      <button class="share-btn" onclick="shareTwitter()">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.676l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+        X / Twitter
+      </button>
+      <button class="share-btn" id="copyBtn" onclick="copyLink()">🔗 Copy link</button>
+    </div>
+  </div>
+</div>
+
+<nav class="pn-nav">
+  <span></span>
+  <a href="prometheus-grafana-k8s.html" class="pn-link next">
+    <div class="pn-dir">Next Post →</div>
+    <div class="pn-title">Full-Stack Observability: Prometheus + Grafana on K8s</div>
+  </a>
+</nav>
+
+<div class="post-footer">
+  <div class="post-footer-inner">
+    <a href="../index.html" class="back-btn">← Back to all posts</a>
+    <span style="font-size:.75rem;color:var(--text-muted);">Published in Pramod's Blogs</span>
+  </div>
+</div>
+
+<footer>
+  <div class="footer-inner">
+    <div class="footer-logo">
+      <div class="logo-icon" style="width:26px;height:26px;font-size:.85rem;background:linear-gradient(135deg,var(--primary),var(--secondary));border-radius:6px;display:flex;align-items:center;justify-content:center;">🚀</div>
+      Pramod's <span>Blogs</span>
+    </div>
+    <p>Practical cloud &amp; DevOps engineering — written by practitioners, for practitioners.</p>
+  </div>
+</footer>
+
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="Back to top">↑</button>
+
+<script>
+  // Progress bar
+  const bar = document.getElementById('progress-bar');
+  window.addEventListener('scroll', () => {
+    const pct = window.scrollY / (document.documentElement.scrollHeight - window.innerHeight) * 100;
+    bar.style.width = Math.min(pct, 100) + '%';
+    document.getElementById('btt').classList.toggle('show', window.scrollY > 400);
+  });
+
+  // Auto read time
+  const words = document.querySelector('.post-body').innerText.trim().split(/\s+/).length;
+  document.getElementById('read-time').textContent = '📖 ' + Math.max(1, Math.round(words / 200)) + ' min read';
+
+  // Share
+  function shareLinkedIn() {
+    window.open('https://www.linkedin.com/sharing/share-offsite/?url=' + encodeURIComponent(window.location.href), '_blank');
+  }
+  function shareTwitter() {
+    window.open('https://twitter.com/intent/tweet?text=' + encodeURIComponent(document.title) + '&url=' + encodeURIComponent(window.location.href), '_blank');
+  }
+  function copyLink() {
+    navigator.clipboard.writeText(window.location.href).then(() => {
+      const btn = document.getElementById('copyBtn');
+      btn.textContent = '✓ Copied!';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.innerHTML = '🔗 Copy link'; btn.classList.remove('copied'); }, 2000);
+    });
+  }
+</script>
+
+</body>
+</html>
