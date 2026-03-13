@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>How I Migrated Keycloak from Wildfly to Quarkus — Pramod's Blogs</title>
+  <meta name="description" content="A complete migration guide: every environment variable rename, the new two-phase build model, Dockerfile and Helm chart updates, and lessons learned moving Keycloak to its Quarkus runtime." />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230d1117'/><text x='16' y='23' font-family='JetBrains Mono,monospace' font-size='16' font-weight='700' fill='%2300ff88' text-anchor='middle'>PS</text></svg>" />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --font:        'Inter', system-ui, sans-serif;
+      --mono:        'JetBrains Mono', 'Fira Code', monospace;
+      --bg:          #0d1117;
+      --bg-surface:  #161b22;
+      --bg-elevated: #1c2333;
+      --border:      #30363d;
+      --border-subtle: #21262d;
+      --ink:         #e6edf3;
+      --ink-mid:     #8b949e;
+      --ink-faint:   #484f58;
+      --accent:      #00ff88;
+      --accent-dim:  rgba(0,255,136,0.12);
+      --accent-glow: rgba(0,255,136,0.25);
+      --cyan:        #58a6ff;
+      --cyan-dim:    rgba(88,166,255,0.12);
+      --orange:      #ff7b72;
+      --yellow:      #e3b341;
+      --purple:      #bc8cff;
+      --radius:      6px;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #ffffff; --bg-surface: #f6f8fa; --bg-elevated: #eaeef2;
+        --border: #d0d7de; --border-subtle: #e8ecf0;
+        --ink: #1f2328; --ink-mid: #656d76; --ink-faint: #9198a1;
+        --accent: #1a7f37; --accent-dim: rgba(0,180,80,0.1); --accent-glow: rgba(0,180,80,0.2);
+        --cyan: #0969da; --cyan-dim: rgba(9,105,218,0.1);
+      }
+    }
+    body.dark {
+      --bg: #0d1117; --bg-surface: #161b22; --bg-elevated: #1c2333;
+      --border: #30363d; --border-subtle: #21262d;
+      --ink: #e6edf3; --ink-mid: #8b949e; --ink-faint: #484f58;
+      --accent: #00ff88; --accent-dim: rgba(0,255,136,0.12); --accent-glow: rgba(0,255,136,0.25);
+      --cyan: #58a6ff; --cyan-dim: rgba(88,166,255,0.12);
+    }
+    body.light {
+      --bg: #ffffff; --bg-surface: #f6f8fa; --bg-elevated: #eaeef2;
+      --border: #d0d7de; --border-subtle: #e8ecf0;
+      --ink: #1f2328; --ink-mid: #656d76; --ink-faint: #9198a1;
+      --accent: #1a7f37; --accent-dim: rgba(0,180,80,0.1); --accent-glow: rgba(0,180,80,0.2);
+      --cyan: #0969da; --cyan-dim: rgba(9,105,218,0.1);
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: var(--font); background: var(--bg); color: var(--ink); line-height: 1.75; font-size: 1rem; -webkit-font-smoothing: antialiased; }
+    a { color: inherit; text-decoration: none; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--ink-faint); }
+
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(13,17,23,0.88); backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 clamp(1.5rem,6vw,5rem);
+    }
+    body.light nav { background: rgba(255,255,255,0.93); }
+    .nav-inner { max-width: 900px; margin: auto; height: 60px; display: flex; align-items: center; justify-content: space-between; }
+    .logo { font-family: var(--mono); font-size: 1rem; font-weight: 600; color: var(--ink); }
+    .logo-prefix { color: var(--accent); }
+    .back-link { font-family: var(--mono); font-size: .75rem; color: var(--ink-faint); font-weight: 500; letter-spacing: .04em; transition: color .15s; }
+    .back-link:hover { color: var(--accent); }
+    .dark-toggle { background: none; border: 1px solid var(--border); border-radius: var(--radius); width: 34px; height: 34px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--ink-faint); transition: border-color .15s, color .15s; flex-shrink: 0; padding: 0; font-size: .95rem; }
+    .dark-toggle:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* Progress bar */
+    #progress-bar { position: fixed; top: 0; left: 0; height: 2px; width: 0%; background: var(--accent); z-index: 9999; transition: width .08s linear; pointer-events: none; box-shadow: 0 0 8px var(--accent-glow); }
+
+    /* Tags */
+    .tag { font-size: .62rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); color: var(--ink-mid); background: var(--bg-surface); }
+    .tag-cicd   { border-color: #1a5c3a; background: rgba(0,255,136,.08); color: #00d46a; }
+    .tag-devops { border-color: #5a1e9c; background: rgba(188,140,255,.1); color: #bc8cff; }
+    .tag-k8s    { border-color: #1d4e89; background: rgba(29,78,137,.15); color: #58a6ff; }
+    .tag-obs    { border-color: #7a4908; background: rgba(227,179,65,.1);  color: #e3b341; }
+    .tag-helm   { border-color: #5a1e9c; background: rgba(188,140,255,.1); color: #d2a8ff; }
+    .tag-aws    { border-color: #7a4908; background: rgba(255,153,0,.1);   color: #e3b341; }
+    .tag-tf     { border-color: #5a1e9c; background: rgba(188,140,255,.1); color: #bc8cff; }
+    .tag-iac    { border-color: #5a1e9c; background: rgba(188,140,255,.1); color: #bc8cff; }
+    .tag-sec    { border-color: #6e2c2c; background: rgba(255,123,114,.1); color: #ff7b72; }
+    .tag-iam    { border-color: #5c3a1a; background: rgba(255,153,0,.1);   color: #ffa657; }
+    .tag-docker { border-color: #1d518a; background: rgba(29,81,138,.15); color: #58a6ff; }
+    .tag-linux  { border-color: #30363d; background: var(--bg-elevated);  color: #8b949e; }
+    .tag-argocd { border-color: #6e2c2c; background: rgba(255,123,114,.1); color: #ffa198; }
+    .tag-github { border-color: #30363d; background: var(--bg-elevated);  color: #8b949e; }
+
+    /* Post hero */
+    .post-hero { padding: 56px clamp(1.5rem,6vw,5rem) 40px; max-width: 900px; margin: auto; }
+    .post-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 20px; }
+    .post-title { font-family: var(--font); font-size: clamp(1.8rem,4vw,2.7rem); font-weight: 700; line-height: 1.15; letter-spacing: -.5px; margin-bottom: 16px; color: var(--ink); }
+    .post-subtitle { font-size: 1rem; color: var(--ink-mid); line-height: 1.75; margin-bottom: 28px; }
+    .post-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 14px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); font-size: .78rem; color: var(--ink-faint); font-family: var(--mono); }
+    .author-chip { display: flex; align-items: center; gap: 9px; }
+    .author-avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, var(--bg-elevated), var(--bg-surface)); border: 2px solid var(--accent); display: flex; align-items: center; justify-content: center; font-size: .65rem; font-weight: 700; color: var(--accent); font-family: var(--mono); }
+    .author-name  { font-size: .85rem; font-weight: 600; color: var(--ink); font-family: var(--font); }
+    .author-title { font-size: .72rem; color: var(--ink-faint); }
+    .meta-div { color: var(--border); }
+
+    /* Post body */
+    .post-body { max-width: 900px; margin: 0 auto; padding: 10px clamp(1.5rem,6vw,5rem) 80px; }
+    .post-body h2 { font-family: var(--font); font-size: 1.5rem; font-weight: 700; margin: 52px 0 16px; letter-spacing: -.3px; padding-bottom: 10px; border-bottom: 1px solid var(--border); color: var(--ink); }
+    .post-body h3 { font-family: var(--font); font-size: 1.15rem; font-weight: 700; margin: 34px 0 10px; color: var(--ink); }
+    .post-body p  { margin-bottom: 16px; color: var(--ink-mid); }
+    .post-body a  { color: var(--cyan); text-decoration: underline; text-underline-offset: 3px; }
+    .post-body a:hover { color: var(--accent); }
+    .post-body ul, .post-body ol { padding-left: 1.4rem; margin-bottom: 16px; color: var(--ink-mid); }
+    .post-body li { margin-bottom: 6px; }
+    .post-body strong { color: var(--ink); font-weight: 600; }
+    .post-body code { font-family: var(--mono); background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-size: .82em; color: var(--accent); }
+    .post-body pre { background: #010409; border: 1px solid #30363d; border-left: 3px solid var(--accent); border-radius: var(--radius); padding: 22px; overflow-x: auto; margin: 6px 0 24px; }
+    .post-body pre code { background: none; border: none; padding: 0; color: #e6edf3; font-size: .84rem; line-height: 1.75; }
+    .code-header { display: flex; align-items: center; justify-content: space-between; background: #010409; border: 1px solid #30363d; border-bottom: none; border-radius: var(--radius) var(--radius) 0 0; padding: 9px 18px; font-size: .72rem; color: var(--ink-faint); font-family: var(--mono); margin-top: 22px; }
+    .code-header + pre { margin-top: 0; border-top-left-radius: 0; border-top-right-radius: 0; border-top: none; }
+    .code-dots { display: flex; gap: 5px; }
+    .code-dots span { width: 10px; height: 10px; border-radius: 50%; }
+    .code-dots .r { background: #ff5f57; } .code-dots .y { background: #febc2e; } .code-dots .g { background: #28c840; }
+    .callout { display: flex; gap: 13px; padding: 16px 18px; border-radius: var(--radius); border-left: 3px solid; margin: 22px 0; }
+    .callout-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 2px; }
+    .callout p { margin: 0; font-size: .87rem; }
+    .callout.info   { background: rgba(88,166,255,.08); border-color: var(--cyan); }
+    .callout.warn   { background: rgba(227,179,65,.08); border-color: var(--yellow); }
+    .callout.tip    { background: rgba(0,255,136,.07);  border-color: var(--accent); }
+    .callout.danger { background: rgba(255,123,114,.08); border-color: var(--orange); }
+    .callout.info   p { color: #79c0ff; } .callout.warn   p { color: #e3b341; }
+    .callout.tip    p { color: #3dd68c; } .callout.danger p { color: #ffa198; }
+    .post-body hr { border: none; border-top: 1px solid var(--border); margin: 38px 0; }
+    .post-body h2 .anchor, .post-body h3 .anchor { opacity: 0; color: var(--ink-faint); text-decoration: none; font-weight: 400; font-size: .8em; margin-left: 7px; transition: opacity .2s; }
+    .post-body h2:hover .anchor, .post-body h3:hover .anchor { opacity: 1; }
+
+    /* Stat cards */
+    .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin: 24px 0; }
+    .stat-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; text-align: center; }
+    .stat-val  { font-family: var(--mono); font-size: 1.8rem; font-weight: 700; color: var(--accent); }
+    .stat-desc { font-size: .75rem; color: var(--ink-faint); margin-top: 4px; line-height: 1.4; }
+
+    /* Table */
+    .post-body table { width: 100%; border-collapse: collapse; font-size: .875rem; margin: 24px 0; }
+    .post-body th { background: var(--bg-elevated); padding: 12px 16px; text-align: left; font-weight: 600; font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-faint); border-bottom: 1px solid var(--border); font-family: var(--mono); }
+    .post-body td { padding: 12px 16px; border-bottom: 1px solid var(--border-subtle); color: var(--ink-mid); }
+    .post-body tr:last-child td { border-bottom: none; }
+    .post-body tr:hover td { background: var(--bg-surface); }
+
+    /* Checklist */
+    .checklist { list-style: none; padding-left: 0; margin-bottom: 16px; }
+    .checklist li { display: flex; align-items: flex-start; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border-subtle); font-size: .9rem; color: var(--ink-mid); }
+    .checklist li:last-child { border-bottom: none; }
+    .checklist li::before { content: '☐'; font-size: 1rem; color: var(--ink-faint); flex-shrink: 0; margin-top: 1px; }
+
+    /* Post footer / share / prev-next */
+    .post-footer { max-width: 900px; margin: 0 auto 60px; padding: 0 clamp(1.5rem,6vw,5rem); }
+    .post-footer-inner { border-top: 1px solid var(--border); padding-top: 32px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
+    .back-btn { display: inline-flex; align-items: center; gap: 7px; background: transparent; border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 20px; font-size: .75rem; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-mid); font-family: var(--font); transition: border-color .15s, color .15s; }
+    .back-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .share-section { max-width: 900px; margin: 0 auto 28px; padding: 0 clamp(1.5rem,6vw,5rem); }
+    .share-inner { border-top: 1px solid var(--border); padding-top: 28px; }
+    .share-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-faint); font-weight: 600; margin-bottom: 14px; font-family: var(--mono); }
+    .share-btns { display: flex; flex-wrap: wrap; gap: 10px; }
+    .share-btn { display: inline-flex; align-items: center; gap: 8px; padding: 8px 18px; border-radius: var(--radius); border: 1px solid var(--border); background: transparent; color: var(--ink-mid); font-size: .75rem; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; font-family: var(--font); transition: border-color .15s, color .15s; }
+    .share-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+    .share-btn svg { width: 14px; height: 14px; fill: currentColor; flex-shrink: 0; }
+    .share-btn.copied { border-color: var(--accent); color: var(--accent); }
+    .pn-nav { max-width: 900px; margin: 0 auto 32px; padding: 0 clamp(1.5rem,6vw,5rem); display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .pn-link { display: block; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; transition: border-color .15s; text-decoration: none; }
+    .pn-link:hover { border-color: var(--accent); }
+    .pn-link.next { text-align: right; }
+    .pn-dir { font-size: .65rem; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-faint); font-weight: 600; margin-bottom: 6px; font-family: var(--mono); }
+    .pn-title { font-family: var(--font); font-size: .9rem; font-weight: 600; color: var(--ink-mid); transition: color .15s; }
+    .pn-link:hover .pn-title { color: var(--accent); }
+    footer { border-top: 1px solid var(--border); padding: 28px clamp(1.5rem,6vw,5rem); }
+    .footer-inner { max-width: 900px; margin: auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+    .footer-logo { font-family: var(--mono); font-weight: 600; font-size: .95rem; color: var(--ink); }
+    .footer-logo .logo-prefix { color: var(--accent); }
+    footer p { font-size: .72rem; color: var(--ink-faint); font-family: var(--mono); }
+    #btt { position: fixed; bottom: 28px; right: 28px; width: 40px; height: 40px; background: var(--accent); border: none; border-radius: var(--radius); color: #0d1117; font-size: .9rem; font-weight: 700; cursor: pointer; opacity: 0; transform: translateY(14px); transition: opacity .3s, transform .3s; z-index: 200; box-shadow: 0 0 16px var(--accent-glow); font-family: var(--font); }
+    #btt.show { opacity: 1; transform: translateY(0); }
+    #btt:hover { box-shadow: 0 0 24px var(--accent-glow); }
+    @media (max-width: 600px) { .pn-nav { grid-template-columns: 1fr; } }
+
+    /* Floating TOC */
+    .toc-float { position: fixed; top: 86px; right: 20px; width: 196px; max-height: calc(100vh - 110px); overflow-y: auto; display: none; z-index: 50; padding: 14px 16px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); border-left: 3px solid var(--accent); }
+    @media (min-width: 1380px) { .toc-float { display: block; } }
+    .toc-float .toc-title { font-size: .62rem; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-faint); font-weight: 600; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border); font-family: var(--mono); }
+    .toc-float ul { list-style: none; padding: 0; }
+    .toc-float li { margin: 1px 0; }
+    .toc-float a { display: block; font-size: .7rem; color: var(--ink-faint); padding: 4px 0 4px 10px; border-left: 2px solid transparent; line-height: 1.4; transition: color .15s, border-color .15s; text-decoration: none; }
+    .toc-float a:hover { color: var(--ink); }
+    .toc-float a.active { color: var(--accent); border-left-color: var(--accent); font-weight: 500; }
+    .toc-float a[data-level="h3"] { padding-left: 20px; font-size: .66rem; }
+
+    /* Copy button */
+    .copy-code-btn { position: absolute; top: 10px; right: 12px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 4px; color: var(--ink-faint); cursor: pointer; font-family: var(--mono); font-size: .6rem; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; padding: 3px 10px; transition: background .15s, color .15s, border-color .15s; line-height: 1.4; }
+    .copy-code-btn:hover { background: var(--bg-surface); color: var(--ink); border-color: var(--ink-faint); }
+    .copy-code-btn.copied { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+    /* Syntax highlighting */
+    pre code.hljs { background: transparent; padding: 0; color: #e6edf3; }
+    .hljs-keyword, .hljs-selector-tag { color: #ff7b72; font-weight: 500; }
+    .hljs-string, .hljs-addition { color: #a5d6ff; }
+    .hljs-comment, .hljs-quote { color: #8b949e; font-style: italic; }
+    .hljs-number, .hljs-regexp, .hljs-literal { color: #79c0ff; }
+    .hljs-built_in, .hljs-type { color: #ffa657; }
+    .hljs-attr, .hljs-variable, .hljs-template-variable { color: #e3b341; }
+    .hljs-name, .hljs-tag { color: #7ee787; }
+    .hljs-meta { color: #8b949e; }
+    .hljs-title, .hljs-section { color: #d2a8ff; font-weight: 600; }
+    .hljs-deletion { color: #ffa198; }
+    .hljs-emphasis { font-style: italic; }
+    .hljs-strong { font-weight: 600; }
+  </style>
+</head>
+<body>
+<div id="progress-bar"></div>
+
+<nav>
+  <div class="nav-inner">
+    <a href="../index.html" class="logo"><span class="logo-prefix">~/</span>Pramod's Blog</a>
+    <a href="../index.html" class="back-link">← All Articles</a>
+    <button class="dark-toggle" id="darkToggle" title="Toggle dark mode">🌙</button>
+  </div>
+</nav>
+
+<div id="toc" class="toc-float"><div class="toc-title">Contents</div><ul id="tocList"></ul></div>
+
+<header class="post-hero">
+  <div class="post-tags">
+    <span class="tag tag-sec">Keycloak</span>
+    <span class="tag tag-devops">DevOps</span>
+    <span class="tag tag-k8s">Kubernetes</span>
+    <span class="tag tag-iam">IAM</span>
+  </div>
+  <h1 class="post-title">How I Migrated Keycloak from Wildfly to Quarkus</h1>
+  <p class="post-subtitle">
+    A complete migration guide covering every environment variable rename, the new two-phase build
+    model, Dockerfile updates, Helm chart changes, and the lessons we learned moving our production
+    IAM platform to the Quarkus-based Keycloak runtime.
+  </p>
+  <div class="post-meta">
+    <div class="author-chip">
+      <div class="author-avatar">PS</div>
+      <div>
+        <div class="author-name">Pramod Sultane</div>
+        <div class="author-title">Cloud &amp; DevOps Engineer</div>
+      </div>
+    </div>
+    <span class="meta-div">·</span>
+    <span>15 March 2026</span>
+    <span class="meta-div">·</span>
+    <span id="read-time">15 min read</span>
+  </div>
+</header>
+
+<article class="post-body">
+
+  <p>
+    If you've been running Keycloak for a while, you've probably heard the news: starting from
+    <strong>Keycloak v17</strong>, Red Hat dropped the Wildfly-based runtime in favor of
+    <strong>Quarkus</strong>. This isn't just a version bump — it's a complete rethinking of
+    the container image, its configuration model, and how the server is started.
+  </p>
+  <p>
+    Our team at the Technical Platform ran Keycloak on Wildfly for years. It was stable,
+    well-understood, and deeply integrated into our Kubernetes manifests and CI/CD pipelines.
+    But with Wildfly reaching end-of-life support and the Quarkus-based image bringing significant
+    performance and startup improvements, we pulled the trigger on the migration.
+  </p>
+  <p>
+    This post documents the lessons we learned, every environment variable that changed (there
+    are many), and how we restructured our Dockerfile and Helm charts to make it work smoothly
+    in production.
+  </p>
+
+  <h2>Why Quarkus? The Case for Migrating <a href="#why-quarkus" class="anchor" id="why-quarkus">#</a></h2>
+
+  <p>
+    <strong>Wildfly</strong> is a full-fledged, heavyweight Java EE application server. It's
+    flexible and battle-tested, but it carries a lot of overhead — slow startup times, high memory
+    consumption, and an XML-heavy configuration model.
+  </p>
+  <p>
+    <strong>Quarkus</strong>, by contrast, is a <em>Kubernetes-native Java framework</em>. It is
+    not an application server. It's designed from the ground up for containerized, cloud-native
+    deployments. The benefits were immediately apparent in our testing:
+  </p>
+
+  <div class="stat-row">
+    <div class="stat-card">
+      <div class="stat-val">~8s</div>
+      <div class="stat-desc">Cold start time<br />(vs. 60–90s on Wildfly)</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val">250 MB</div>
+      <div class="stat-desc">Container image size<br />(vs. ~700 MB on Wildfly)</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val">350 MB</div>
+      <div class="stat-desc">Idle memory footprint<br />(vs. ~800 MB on Wildfly)</div>
+    </div>
+  </div>
+
+  <p>For a production IAM platform running in Kubernetes, these are not small wins.</p>
+
+  <table>
+    <thead>
+      <tr><th>Metric</th><th>Wildfly-based Keycloak</th><th>Quarkus-based Keycloak</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Cold start time</td><td>~60–90 seconds</td><td>~5–10 seconds</td></tr>
+      <tr><td>Container image size</td><td>~700 MB</td><td>~250 MB</td></tr>
+      <tr><td>Memory footprint (idle)</td><td>~800 MB</td><td>~350 MB</td></tr>
+      <tr><td>Config model</td><td>Environment variables + XML</td><td>Environment variables + <code>keycloak.conf</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Understanding the New Build Model <a href="#build-model" class="anchor" id="build-model">#</a></h2>
+
+  <p>
+    One of the biggest conceptual shifts in the Quarkus-based Keycloak is the
+    <strong>two-phase startup model</strong>:
+  </p>
+  <ol>
+    <li><strong>Build phase</strong> — Keycloak runs <code>kc.sh build</code> to pre-compile and optimize the server configuration (theme providers, database drivers, etc.). This produces an optimized runtime image.</li>
+    <li><strong>Start phase</strong> — Keycloak runs <code>kc.sh start</code> to launch the server using the pre-built configuration.</li>
+  </ol>
+  <p>
+    In the Wildfly image, everything was configured at runtime through environment variables.
+    In the Quarkus image, some options are <strong>build-time options</strong> that must be baked
+    into the image, while others remain <strong>runtime options</strong>.
+  </p>
+
+  <div class="callout warn">
+    <span class="callout-icon">⚠️</span>
+    <p><strong>Important:</strong> <code>KC_HTTP_RELATIVE_PATH</code> is a <strong>build-time</strong> option. If you want to keep the legacy <code>/auth</code> path, this <strong>must</strong> be set in the Dockerfile during the build step — not in Kubernetes deployment env vars at runtime.</p>
+  </div>
+
+  <p>
+    The recommended production approach is to create a <strong>custom Keycloak Docker image</strong>
+    that runs the build step at Docker image build time, so containers start immediately without
+    any warm-up penalty:
+  </p>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>Dockerfile</span>
+  </div>
+  <pre><code># Stage 1: Build the optimized Keycloak image
+FROM quay.io/keycloak/keycloak:22.0 AS builder
+
+# Build-time configuration options (baked into the image)
+ENV KC_DB=postgres
+ENV KC_HTTP_RELATIVE_PATH=/auth
+
+# Copy custom themes
+COPY --chown=keycloak:keycloak themes/ /opt/keycloak/themes/
+
+# Run the Keycloak build step
+RUN /opt/keycloak/bin/kc.sh build
+
+# Stage 2: Runtime image
+FROM quay.io/keycloak/keycloak:22.0
+
+COPY --from=builder /opt/keycloak/ /opt/keycloak/
+
+ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
+CMD ["start"]</code></pre>
+
+  <h2>Environment Variable Reference: Complete Change Map <a href="#env-vars" class="anchor" id="env-vars">#</a></h2>
+
+  <p>
+    This was the most labor-intensive part of the migration. The entire environment variable
+    naming convention changed.
+  </p>
+
+  <h3>New Variables (Quarkus-only)</h3>
+
+  <table>
+    <thead>
+      <tr><th>Variable</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>KC_HOSTNAME</code></td><td>The fully qualified domain name (FQDN) of the Keycloak service. Hostname verification is enabled by default in production. Use <code>--hostname-strict=false</code> only in dev/test.</td></tr>
+      <tr><td><code>KC_HTTP_RELATIVE_PATH</code></td><td>Sets the path prefix. Defaults to <code>/</code> in Quarkus. Set to <code>/auth</code> for backward compatibility. <strong>Build-time option — define in Dockerfile.</strong></td></tr>
+      <tr><td><code>KC_PROXY</code></td><td>Replaces <code>PROXY_ADDRESS_FORWARDING</code>. Accepted values: <code>edge</code>, <code>reencrypt</code>, <code>passthrough</code>.</td></tr>
+      <tr><td><code>KC_METRICS_ENABLED</code></td><td>Enables the metrics endpoint. Replaces <code>KEYCLOAK_STATISTICS</code>.</td></tr>
+      <tr><td><code>KC_CACHE_CONFIG_FILE</code></td><td>Path to a custom Infinispan cache configuration file for fine-grained control over distributed caching.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Changed Variables (Renamed from Wildfly)</h3>
+
+  <table>
+    <thead>
+      <tr><th>Old Variable (Wildfly)</th><th>New Variable (Quarkus)</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>KEYCLOAK_USER</code></td><td><code>KEYCLOAK_ADMIN</code></td><td>Admin username</td></tr>
+      <tr><td><code>KEYCLOAK_PASSWORD</code></td><td><code>KEYCLOAK_ADMIN_PASSWORD</code></td><td>Admin password</td></tr>
+      <tr><td><code>DB_VENDOR</code></td><td><code>KC_DB</code></td><td>e.g., <code>postgres</code>, <code>mysql</code>, <code>mssql</code></td></tr>
+      <tr><td><code>DB_ADDR</code></td><td><code>KC_DB_URL_HOST</code></td><td>Database hostname</td></tr>
+      <tr><td><code>DB_PORT</code></td><td><code>KC_DB_URL_PORT</code></td><td>Database port</td></tr>
+      <tr><td><code>DB_DATABASE</code></td><td><code>KC_DB_URL_DATABASE</code></td><td>Database name</td></tr>
+      <tr><td><code>DB_USER</code></td><td><code>KC_DB_USERNAME</code></td><td>Database username</td></tr>
+      <tr><td><code>DB_PASSWORD</code></td><td><code>KC_DB_PASSWORD</code></td><td>Database password</td></tr>
+      <tr><td><code>KEYCLOAK_STATISTICS</code></td><td><code>KC_METRICS_ENABLED</code></td><td>Set to <code>true</code> to enable</td></tr>
+      <tr><td><code>PROXY_ADDRESS_FORWARDING</code></td><td><code>KC_PROXY</code></td><td>See proxy modes above</td></tr>
+      <tr><td><code>KEYCLOAK_WELCOME_THEME</code></td><td><code>KC_SPI_THEME_WELCOME_THEME</code></td><td>Welcome page theme name</td></tr>
+      <tr><td><code>JGROUPS_DISCOVERY_PROTOCOL</code></td><td><code>JAVA_OPTS</code></td><td>JGroups settings now passed via JVM options</td></tr>
+      <tr><td><code>JGROUPS_DISCOVERY_PROPERTIES</code></td><td><code>JAVA_OPTS</code></td><td>Merged into <code>JAVA_OPTS</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Removed Variables (No Direct Equivalent)</h3>
+
+  <table>
+    <thead>
+      <tr><th>Removed Variable</th><th>Replacement Strategy</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>CACHE_OWNERS_AUTH_SESSIONS_COUNT</code></td><td>No direct equivalent. Use <code>KC_CACHE_CONFIG_FILE</code> to provide a custom Infinispan XML configuration.</td></tr>
+      <tr><td><code>CACHE_OWNERS_COUNT</code></td><td>Same as above — requires a custom Infinispan config.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>File and Path Changes <a href="#paths" class="anchor" id="paths">#</a></h2>
+
+  <h3>Theme Directory</h3>
+
+  <p>Update your <code>COPY</code> instructions in Dockerfiles and any volume mount paths in Kubernetes manifests:</p>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>theme path change</span>
+  </div>
+  <pre><code># Wildfly
+/opt/jboss/keycloak/themes/
+
+# Quarkus
+/opt/keycloak/themes/</code></pre>
+
+  <h3>Configuration File</h3>
+
+  <p>The configuration file was also renamed and the format simplified:</p>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>config file path change</span>
+  </div>
+  <pre><code># Wildfly
+conf/keycloak.properties
+
+# Quarkus
+conf/keycloak.conf</code></pre>
+
+  <p>
+    The new <code>keycloak.conf</code> uses a simple <code>key=value</code> format. The <code>KC_</code>
+    prefix is dropped and variable names use hyphens instead of underscores:
+  </p>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>conf/keycloak.conf</span>
+  </div>
+  <pre><code>db=postgres
+db-url-host=my-postgres-host
+db-url-database=keycloak
+http-relative-path=/auth
+hostname=keycloak.example.com
+proxy=edge
+metrics-enabled=true</code></pre>
+
+  <h2>Kubernetes / Helm Chart Changes <a href="#helm-changes" class="anchor" id="helm-changes">#</a></h2>
+
+  <p>Our Helm values file needed significant updates. Here's the before/after for the most critical sections:</p>
+
+  <h3>Before (Wildfly)</h3>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>helm-values.yaml (Wildfly)</span>
+  </div>
+  <pre><code>env:
+  - name: KEYCLOAK_USER
+    valueFrom:
+      secretKeyRef:
+        name: keycloak-secret
+        key: admin-user
+  - name: KEYCLOAK_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: keycloak-secret
+        key: admin-password
+  - name: DB_VENDOR
+    value: postgres
+  - name: DB_ADDR
+    value: postgres-service
+  - name: DB_PORT
+    value: "5432"
+  - name: DB_DATABASE
+    value: keycloak
+  - name: DB_USER
+    valueFrom:
+      secretKeyRef:
+        name: db-secret
+        key: username
+  - name: DB_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: db-secret
+        key: password
+  - name: PROXY_ADDRESS_FORWARDING
+    value: "true"
+  - name: KEYCLOAK_STATISTICS
+    value: "db,http"
+  - name: JGROUPS_DISCOVERY_PROTOCOL
+    value: dns.DNS_PING
+  - name: JGROUPS_DISCOVERY_PROPERTIES
+    value: "dns_query=keycloak-headless.default.svc.cluster.local"</code></pre>
+
+  <h3>After (Quarkus)</h3>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>helm-values.yaml (Quarkus)</span>
+  </div>
+  <pre><code>env:
+  - name: KEYCLOAK_ADMIN
+    valueFrom:
+      secretKeyRef:
+        name: keycloak-secret
+        key: admin-user
+  - name: KEYCLOAK_ADMIN_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: keycloak-secret
+        key: admin-password
+  - name: KC_DB
+    value: postgres
+  - name: KC_DB_URL_HOST
+    value: postgres-service
+  - name: KC_DB_URL_PORT
+    value: "5432"
+  - name: KC_DB_URL_DATABASE
+    value: keycloak
+  - name: KC_DB_USERNAME
+    valueFrom:
+      secretKeyRef:
+        name: db-secret
+        key: username
+  - name: KC_DB_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: db-secret
+        key: password
+  - name: KC_PROXY
+    value: edge
+  - name: KC_HOSTNAME
+    value: keycloak.example.com
+  - name: KC_METRICS_ENABLED
+    value: "true"
+  - name: JAVA_OPTS
+    value: >-
+      -Djgroups.dns.query=keycloak-headless.default.svc.cluster.local
+      -Djgroups.default.protocol=dns.DNS_PING</code></pre>
+
+  <h2>Handling the <code>/auth</code> Path Breaking Change <a href="#auth-path" class="anchor" id="auth-path">#</a></h2>
+
+  <p>
+    The most disruptive change for existing deployments is the default URL path. In Wildfly,
+    Keycloak served everything under <code>/auth</code>. In Quarkus, the default is <code>/</code>
+    (root path).
+  </p>
+
+  <h3>Option A — Keep the <code>/auth</code> path (recommended for existing deployments)</h3>
+
+  <p>Add the following to your Dockerfile as a build-time argument. This maintains full backward
+  compatibility for all existing clients, redirect URIs, and OIDC discovery endpoints without any
+  client-side changes:</p>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>Dockerfile (keep /auth path)</span>
+  </div>
+  <pre><code>ENV KC_HTTP_RELATIVE_PATH=/auth
+RUN /opt/keycloak/bin/kc.sh build</code></pre>
+
+  <h3>Option B — Migrate to the new root path</h3>
+
+  <p>If you choose to migrate all clients to the new base URL, you must update:</p>
+  <ul>
+    <li>OIDC provider configuration in all applications</li>
+    <li>Redirect URIs in every Keycloak client</li>
+    <li>Ingress/proxy rules pointing to <code>/auth</code></li>
+    <li>Monitoring and health check endpoints</li>
+  </ul>
+
+  <div class="callout tip">
+    <span class="callout-icon">✅</span>
+    <p>For large deployments with dozens of clients, <strong>Option A is strongly recommended</strong> as a first step. You can plan a coordinated path migration later once everything is stable on Quarkus.</p>
+  </div>
+
+  <h2>Custom Cache Configuration (Replacing <code>CACHE_OWNERS_*</code>) <a href="#cache" class="anchor" id="cache">#</a></h2>
+
+  <p>
+    If you relied on <code>CACHE_OWNERS_AUTH_SESSIONS_COUNT</code> or <code>CACHE_OWNERS_COUNT</code>,
+    you now need a custom Infinispan XML file. Mount it into the container and reference it:
+  </p>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>helm-values.yaml (cache config)</span>
+  </div>
+  <pre><code>env:
+  - name: KC_CACHE_CONFIG_FILE
+    value: /opt/keycloak/conf/cache-ispn-custom.xml
+volumeMounts:
+  - name: cache-config
+    mountPath: /opt/keycloak/conf/cache-ispn-custom.xml
+    subPath: cache-ispn-custom.xml
+volumes:
+  - name: cache-config
+    configMap:
+      name: keycloak-cache-config</code></pre>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>cache-ispn-custom.xml</span>
+  </div>
+  <pre><code>&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;infinispan
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="urn:infinispan:config:14.0 http://www.infinispan.org/schemas/infinispan-config-14.0.xsd"
+  xmlns="urn:infinispan:config:14.0"&gt;
+
+  &lt;cache-container name="keycloak"&gt;
+    &lt;distributed-cache name="authenticationSessions" owners="2"&gt;
+      &lt;expiration lifespan="-1" /&gt;
+    &lt;/distributed-cache&gt;
+    &lt;distributed-cache name="sessions" owners="2"&gt;
+      &lt;expiration lifespan="-1" /&gt;
+    &lt;/distributed-cache&gt;
+  &lt;/cache-container&gt;
+&lt;/infinispan&gt;</code></pre>
+
+  <h2>Migration Checklist <a href="#checklist" class="anchor" id="checklist">#</a></h2>
+
+  <ul class="checklist">
+    <li>Update Docker base image from <code>jboss/keycloak</code> to <code>quay.io/keycloak/keycloak</code></li>
+    <li>Add <code>kc.sh build</code> step to Dockerfile builder stage</li>
+    <li>Set <code>KC_HTTP_RELATIVE_PATH=/auth</code> as build-time <code>ENV</code> if keeping legacy path</li>
+    <li>Update custom theme <code>COPY</code> paths from <code>/opt/jboss/keycloak/themes/</code> to <code>/opt/keycloak/themes/</code></li>
+    <li>Rename <code>KEYCLOAK_USER</code> → <code>KEYCLOAK_ADMIN</code> in all secrets/configs</li>
+    <li>Rename <code>KEYCLOAK_PASSWORD</code> → <code>KEYCLOAK_ADMIN_PASSWORD</code> in all secrets/configs</li>
+    <li>Rename all <code>DB_*</code> variables to <code>KC_DB_*</code> equivalents</li>
+    <li>Replace <code>PROXY_ADDRESS_FORWARDING=true</code> with <code>KC_PROXY=edge</code></li>
+    <li>Add <code>KC_HOSTNAME</code> set to your FQDN</li>
+    <li>Replace <code>KEYCLOAK_STATISTICS</code> with <code>KC_METRICS_ENABLED=true</code></li>
+    <li>Migrate JGroups config from <code>JGROUPS_DISCOVERY_*</code> to <code>JAVA_OPTS</code></li>
+    <li>Replace <code>CACHE_OWNERS_*</code> with custom Infinispan XML via <code>KC_CACHE_CONFIG_FILE</code></li>
+    <li>Rename <code>conf/keycloak.properties</code> → <code>conf/keycloak.conf</code></li>
+    <li>Update Ingress/proxy health check paths if needed</li>
+    <li>Update monitoring dashboards &amp; alerting rules for new metrics endpoint format</li>
+    <li>Verify OIDC discovery endpoint is reachable post-migration</li>
+    <li>Run integration tests against all registered clients</li>
+  </ul>
+
+  <h2>Lessons Learned <a href="#lessons" class="anchor" id="lessons">#</a></h2>
+
+  <h3>1. Test the <code>--auto-build</code> path first</h3>
+  <p>
+    Using <code>CMD ["start", "--auto-build"]</code> in your container is the fastest way to validate
+    that your environment variables are correct before committing to a custom built image.
+  </p>
+
+  <h3>2. <code>KC_HTTP_RELATIVE_PATH</code> will bite you if you forget it</h3>
+  <p>
+    The most common gotcha we encountered was forgetting that this is a <em>build-time</em> option.
+    Setting it only in the Kubernetes deployment env vars does nothing — it must be in the
+    Dockerfile and the <code>kc.sh build</code> must run with it set.
+  </p>
+
+  <h3>3. Hostname verification is strict by default</h3>
+  <p>
+    The new <code>KC_HOSTNAME</code> setting enforces that all requests match the configured hostname.
+    In lower environments, add <code>--hostname-strict=false</code> to the <code>start</code> command
+    to avoid hard-to-debug redirect failures.
+  </p>
+
+  <h3>4. Don't skip the two-stage Docker build</h3>
+  <p>
+    Running <code>kc.sh build</code> inside the same layer that serves traffic works, but it adds
+    ~30 seconds to every container restart. A two-stage Dockerfile eliminates this entirely.
+  </p>
+
+  <h3>5. JGroups DNS_PING still works, just configured differently</h3>
+  <p>
+    The JGroups clustering mechanism that enables Keycloak's distributed session cache still
+    functions — it's just configured via <code>JAVA_OPTS</code> now instead of its own dedicated
+    environment variables.
+  </p>
+
+  <hr />
+
+  <h2>Conclusion <a href="#conclusion" class="anchor" id="conclusion">#</a></h2>
+
+  <p>
+    Migrating from the Wildfly-based Keycloak to the Quarkus-based version requires careful
+    attention to environment variable renames, a new two-phase build model, and path changes
+    throughout your CI/CD configuration. While the change surface is large, it is entirely
+    mechanical once you have the mapping.
+  </p>
+  <p>
+    The payoff is substantial: faster startup, smaller images, lower memory usage, and a simpler
+    operational model that aligns with how modern Kubernetes-native applications are built and
+    deployed.
+  </p>
+  <ul>
+    <li>Every <code>DB_*</code> variable has a direct <code>KC_DB_*</code> counterpart — just rename</li>
+    <li>The <code>/auth</code> path change is the biggest operational risk; keep it with Option A unless you plan a coordinated client migration</li>
+    <li>The two-stage Docker build pays for itself immediately in restart speed</li>
+    <li>JGroups clustering is alive and well — just lives inside <code>JAVA_OPTS</code> now</li>
+  </ul>
+  <p>
+    For the full configuration reference, see the
+    <a href="https://www.keycloak.org/server/all-config" target="_blank" rel="noopener">official Keycloak All Configurations page</a>.
+  </p>
+
+</article>
+
+<div class="share-section">
+  <div class="share-inner">
+    <div class="share-label">Share this post</div>
+    <div class="share-btns">
+      <button class="share-btn" onclick="shareLinkedIn()">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+        LinkedIn
+      </button>
+      <button class="share-btn" onclick="shareTwitter()">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.676l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+        X / Twitter
+      </button>
+      <button class="share-btn" id="copyBtn" onclick="copyLink()">🔗 Copy link</button>
+    </div>
+  </div>
+</div>
+
+<nav class="pn-nav">
+  <a href="green-cicd-energy.html" class="pn-link prev">
+    <div class="pn-dir">← Previous Post</div>
+    <div class="pn-title">Every time we run a Git pipeline, we're consuming energy 💡</div>
+  </a>
+  <div></div>
+</nav>
+
+<div class="post-footer">
+  <div class="post-footer-inner">
+    <a href="../index.html" class="back-btn">← Back to all posts</a>
+    <span style="font-size:.75rem;color:var(--ink-faint);">Published in Pramod's Blogs</span>
+  </div>
+</div>
+
+<footer>
+  <div class="footer-inner">
+    <div class="footer-logo"><span class="logo-prefix">~/</span>Pramod's Blog</div>
+    <p>© 2026 · Practical cloud &amp; DevOps engineering.</p>
+  </div>
+</footer>
+
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="Back to top">↑</button>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>
+  // Progress bar
+  const bar = document.getElementById('progress-bar');
+  window.addEventListener('scroll', () => {
+    const pct = window.scrollY / (document.documentElement.scrollHeight - window.innerHeight) * 100;
+    bar.style.width = Math.min(pct, 100) + '%';
+    document.getElementById('btt').classList.toggle('show', window.scrollY > 400);
+  });
+
+  // Auto read time
+  const words = document.querySelector('.post-body').innerText.trim().split(/\s+/).length;
+  document.getElementById('read-time').textContent = '15 min read';
+
+  // Share
+  function shareLinkedIn() {
+    window.open('https://www.linkedin.com/sharing/share-offsite/?url=' + encodeURIComponent(window.location.href), '_blank');
+  }
+  function shareTwitter() {
+    window.open('https://twitter.com/intent/tweet?text=' + encodeURIComponent(document.title) + '&url=' + encodeURIComponent(window.location.href), '_blank');
+  }
+  function copyLink() {
+    navigator.clipboard.writeText(window.location.href).then(() => {
+      const btn = document.getElementById('copyBtn');
+      btn.textContent = '✓ Copied!';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.innerHTML = '🔗 Copy link'; btn.classList.remove('copied'); }, 2000);
+    });
+  }
+
+  // Dark mode
+  const darkToggle = document.getElementById('darkToggle');
+  function applyTheme(dark) {
+    document.body.classList.toggle('dark', dark);
+    document.body.classList.toggle('light', !dark);
+    darkToggle.textContent = dark ? '☀' : '🌙';
+    localStorage.setItem('darkMode', dark);
+  }
+  const saved = localStorage.getItem('darkMode');
+  applyTheme(saved !== null ? saved === 'true' : window.matchMedia('(prefers-color-scheme: dark)').matches);
+  darkToggle.addEventListener('click', () => applyTheme(!document.body.classList.contains('dark')));
+
+  // Syntax highlighting
+  if (typeof hljs !== 'undefined') {
+    hljs.configure({ ignoreUnescapedHTML: true });
+    hljs.highlightAll();
+  }
+
+  // Copy-to-clipboard buttons on all code blocks
+  document.querySelectorAll('pre').forEach(pre => {
+    const btn = document.createElement('button');
+    btn.className = 'copy-code-btn';
+    btn.textContent = 'Copy';
+    btn.addEventListener('click', () => {
+      const code = pre.querySelector('code');
+      navigator.clipboard.writeText((code || pre).innerText.trimEnd()).then(() => {
+        btn.textContent = '✓ Copied';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+      }).catch(() => { btn.textContent = 'Error'; setTimeout(() => { btn.textContent = 'Copy'; }, 1500); });
+    });
+    pre.style.position = 'relative';
+    pre.appendChild(btn);
+  });
+
+  // Floating TOC
+  (function() {
+    var headings = Array.from(document.querySelectorAll('.post-body h2, .post-body h3'));
+    if (headings.length < 2) return;
+    var tocList = document.getElementById('tocList');
+    headings.forEach(function(h, i) {
+      if (!h.id) h.id = 'sec-' + i;
+      var li = document.createElement('li');
+      var a = document.createElement('a');
+      a.href = '#' + h.id;
+      a.textContent = h.textContent.replace(/\s*#\s*$/, '').trim();
+      a.dataset.level = h.tagName.toLowerCase();
+      li.appendChild(a);
+      tocList.appendChild(li);
+    });
+    var observer = new IntersectionObserver(function(entries) {
+      entries.forEach(function(e) {
+        var link = tocList.querySelector('a[href="#' + e.target.id + '"]');
+        if (link) link.classList.toggle('active', e.isIntersecting);
+      });
+    }, { rootMargin: '-5% 0px -80% 0px', threshold: 0 });
+    headings.forEach(function(h) { observer.observe(h); });
+  })();
+
+  // Home key → scroll to top
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Home' && !e.target.matches('input, textarea, [contenteditable]')) {
+      e.preventDefault();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  });
+</script>
+
+</body>
+</html>
