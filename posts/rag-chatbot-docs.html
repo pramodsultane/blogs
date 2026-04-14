@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Building a RAG-based Chatbot for Your Public Blog — Pramod's Blogs</title>
+  <meta name="description" content="How to build and deploy a Retrieval-Augmented Generation (RAG) chatbot for a public-facing blog using Markdown, FAISS, Kubernetes, and a lightweight JavaScript widget." />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230d1117'/><text x='16' y='23' font-family='JetBrains Mono,monospace' font-size='16' font-weight='700' fill='%2300ff88' text-anchor='middle'>PS</text></svg>" />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --font:        'Inter', system-ui, sans-serif;
+      --mono:        'JetBrains Mono', 'Fira Code', monospace;
+      --bg:          #0d1117;
+      --bg-surface:  #161b22;
+      --bg-elevated: #1c2333;
+      --border:      #30363d;
+      --border-subtle: #21262d;
+      --ink:         #e6edf3;
+      --ink-mid:     #8b949e;
+      --ink-faint:   #484f58;
+      --accent:      #00ff88;
+      --accent-dim:  rgba(0,255,136,0.12);
+      --accent-glow: rgba(0,255,136,0.25);
+      --cyan:        #58a6ff;
+      --cyan-dim:    rgba(88,166,255,0.12);
+      --orange:      #ff7b72;
+      --yellow:      #e3b341;
+      --purple:      #bc8cff;
+      --radius:      6px;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #ffffff; --bg-surface: #f6f8fa; --bg-elevated: #eaeef2;
+        --border: #d0d7de; --border-subtle: #e8ecf0;
+        --ink: #1f2328; --ink-mid: #656d76; --ink-faint: #9198a1;
+        --accent: #1a7f37; --accent-dim: rgba(0,180,80,0.1); --accent-glow: rgba(0,180,80,0.2);
+        --cyan: #0969da; --cyan-dim: rgba(9,105,218,0.1);
+      }
+    }
+    body.dark {
+      --bg: #0d1117; --bg-surface: #161b22; --bg-elevated: #1c2333;
+      --border: #30363d; --border-subtle: #21262d;
+      --ink: #e6edf3; --ink-mid: #8b949e; --ink-faint: #484f58;
+      --accent: #00ff88; --accent-dim: rgba(0,255,136,0.12); --accent-glow: rgba(0,255,136,0.25);
+      --cyan: #58a6ff; --cyan-dim: rgba(88,166,255,0.12);
+    }
+    body.light {
+      --bg: #ffffff; --bg-surface: #f6f8fa; --bg-elevated: #eaeef2;
+      --border: #d0d7de; --border-subtle: #e8ecf0;
+      --ink: #1f2328; --ink-mid: #656d76; --ink-faint: #9198a1;
+      --accent: #1a7f37; --accent-dim: rgba(0,180,80,0.1); --accent-glow: rgba(0,180,80,0.2);
+      --cyan: #0969da; --cyan-dim: rgba(9,105,218,0.1);
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: var(--font); background: var(--bg); color: var(--ink); line-height: 1.75; font-size: 1rem; -webkit-font-smoothing: antialiased; }
+    a { color: inherit; text-decoration: none; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--ink-faint); }
+
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(13,17,23,0.88); backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 clamp(1.5rem,6vw,5rem);
+    }
+    body.light nav { background: rgba(255,255,255,0.93); }
+    .nav-inner { max-width: 900px; margin: auto; height: 60px; display: flex; align-items: center; justify-content: space-between; }
+    .logo { font-family: var(--mono); font-size: 1rem; font-weight: 600; color: var(--ink); }
+    .logo-prefix { color: var(--accent); }
+    .logo-icon { display: none; }
+    .logo span { display: none; }
+    .back-link { font-family: var(--mono); font-size: .75rem; color: var(--ink-faint); font-weight: 500; letter-spacing: .04em; transition: color .15s; }
+    .back-link:hover { color: var(--accent); }
+    .dark-toggle { background: none; border: 1px solid var(--border); border-radius: var(--radius); width: 34px; height: 34px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--ink-faint); transition: border-color .15s, color .15s; flex-shrink: 0; padding: 0; font-size: .95rem; }
+    .dark-toggle:hover { border-color: var(--accent); color: var(--accent); }
+
+    #progress-bar { position: fixed; top: 0; left: 0; height: 2px; width: 0%; background: var(--accent); z-index: 9999; transition: width .08s linear; pointer-events: none; box-shadow: 0 0 8px var(--accent-glow); }
+
+    .tag { font-size: .62rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); color: var(--ink-mid); background: var(--bg-surface); }
+    .tag-ai      { border-color: #5a1e9c; background: rgba(188,140,255,.1); color: #bc8cff; }
+    .tag-rag     { border-color: #1d4e89; background: rgba(29,78,137,.15); color: #58a6ff; }
+    .tag-k8s     { border-color: #1d4e89; background: rgba(29,78,137,.15); color: #58a6ff; }
+    .tag-obs     { border-color: #7a4908; background: rgba(227,179,65,.1);  color: #e3b341; }
+
+    .post-hero { padding: 56px clamp(1.5rem,6vw,5rem) 40px; max-width: 900px; margin: auto; }
+    .post-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 20px; }
+    .post-title { font-family: var(--font); font-size: clamp(1.8rem,4vw,2.7rem); font-weight: 700; line-height: 1.15; letter-spacing: -.5px; margin-bottom: 16px; color: var(--ink); }
+    .post-subtitle { font-size: 1rem; color: var(--ink-mid); line-height: 1.75; margin-bottom: 28px; }
+    .post-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 14px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); font-size: .78rem; color: var(--ink-faint); font-family: var(--mono); }
+    .author-chip { display: flex; align-items: center; gap: 9px; }
+    .author-avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, var(--bg-elevated), var(--bg-surface)); border: 2px solid var(--accent); display: flex; align-items: center; justify-content: center; font-size: .65rem; font-weight: 700; color: var(--accent); font-family: var(--mono); }
+    .author-name  { font-size: .85rem; font-weight: 600; color: var(--ink); font-family: var(--font); }
+    .author-title { font-size: .72rem; color: var(--ink-faint); }
+    .meta-div { color: var(--border); }
+
+    .post-body { max-width: 900px; margin: 0 auto; padding: 10px clamp(1.5rem,6vw,5rem) 80px; }
+    .post-body h2 { font-family: var(--font); font-size: 1.5rem; font-weight: 700; margin: 52px 0 16px; letter-spacing: -.3px; padding-bottom: 10px; border-bottom: 1px solid var(--border); color: var(--ink); }
+    .post-body h3 { font-family: var(--font); font-size: 1.15rem; font-weight: 700; margin: 34px 0 10px; color: var(--ink); }
+    .post-body p  { margin-bottom: 16px; color: var(--ink-mid); }
+    .post-body a  { color: var(--cyan); text-decoration: underline; text-underline-offset: 3px; }
+    .post-body a:hover { color: var(--accent); }
+    .post-body ul, .post-body ol { padding-left: 1.4rem; margin-bottom: 16px; color: var(--ink-mid); }
+    .post-body li { margin-bottom: 6px; }
+    .post-body strong { color: var(--ink); font-weight: 600; }
+    .post-body code { font-family: var(--mono); background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-size: .82em; color: var(--accent); }
+    .post-body pre { background: #010409; border: 1px solid #30363d; border-left: 3px solid var(--accent); border-radius: var(--radius); padding: 22px; overflow-x: auto; margin: 6px 0 24px; position: relative; }
+    .post-body pre code { background: none; border: none; padding: 0; color: #e6edf3; font-size: .84rem; line-height: 1.75; }
+    .code-header { display: flex; align-items: center; justify-content: space-between; background: #010409; border: 1px solid #30363d; border-bottom: none; border-radius: var(--radius) var(--radius) 0 0; padding: 9px 18px; font-size: .72rem; color: var(--ink-faint); font-family: var(--mono); margin-top: 22px; }
+    .code-header + pre { margin-top: 0; border-top-left-radius: 0; border-top-right-radius: 0; border-top: none; }
+    .code-dots { display: flex; gap: 5px; }
+    .code-dots span { width: 10px; height: 10px; border-radius: 50%; }
+    .code-dots .r { background: #ff5f57; } .code-dots .y { background: #febc2e; } .code-dots .g { background: #28c840; }
+
+    .callout { display: flex; gap: 13px; padding: 16px 18px; border-radius: var(--radius); border-left: 3px solid; margin: 22px 0; }
+    .callout-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 2px; }
+    .callout p { margin: 0; font-size: .87rem; }
+    .callout.info   { background: rgba(88,166,255,.08); border-color: var(--cyan); }
+    .callout.warn   { background: rgba(227,179,65,.08); border-color: var(--yellow); }
+    .callout.tip    { background: rgba(0,255,136,.07);  border-color: var(--accent); }
+
+    .post-body hr { border: none; border-top: 1px solid var(--border); margin: 38px 0; }
+    .post-body h2 .anchor, .post-body h3 .anchor { opacity: 0; color: var(--ink-faint); text-decoration: none; font-weight: 400; font-size: .8em; margin-left: 7px; transition: opacity .2s; }
+    .post-body h2:hover .anchor, .post-body h3:hover .anchor { opacity: 1; }
+
+    .post-footer { max-width: 900px; margin: 0 auto 60px; padding: 0 clamp(1.5rem,6vw,5rem); }
+    .post-footer-inner { border-top: 1px solid var(--border); padding-top: 32px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
+    .back-btn { display: inline-flex; align-items: center; gap: 7px; background: transparent; border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 20px; font-size: .75rem; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-mid); font-family: var(--font); transition: border-color .15s, color .15s; }
+    .back-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .share-section { max-width: 900px; margin: 0 auto 28px; padding: 0 clamp(1.5rem,6vw,5rem); }
+    .share-inner { border-top: 1px solid var(--border); padding-top: 28px; }
+    .share-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-faint); font-weight: 600; margin-bottom: 14px; font-family: var(--mono); }
+    .share-btns { display: flex; flex-wrap: wrap; gap: 10px; }
+    .share-btn { display: inline-flex; align-items: center; gap: 8px; padding: 8px 18px; border-radius: var(--radius); border: 1px solid var(--border); background: transparent; color: var(--ink-mid); font-size: .75rem; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; font-family: var(--font); transition: border-color .15s, color .15s; }
+    .share-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+    .share-btn svg { width: 14px; height: 14px; fill: currentColor; flex-shrink: 0; }
+    .share-btn.copied { border-color: var(--accent); color: var(--accent); }
+
+    .pn-nav { max-width: 900px; margin: 0 auto 32px; padding: 0 clamp(1.5rem,6vw,5rem); display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .pn-link { display: block; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; transition: border-color .15s; text-decoration: none; }
+    .pn-link:hover { border-color: var(--accent); }
+    .pn-link.next { text-align: right; }
+    .pn-dir { font-size: .65rem; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-faint); font-weight: 600; margin-bottom: 6px; font-family: var(--mono); }
+    .pn-title { font-family: var(--font); font-size: .9rem; font-weight: 600; color: var(--ink-mid); transition: color .15s; }
+    .pn-link:hover .pn-title { color: var(--accent); }
+
+    footer { border-top: 1px solid var(--border); padding: 28px clamp(1.5rem,6vw,5rem); }
+    .footer-inner { max-width: 900px; margin: auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+    .footer-logo { font-family: var(--mono); font-weight: 600; font-size: .95rem; color: var(--ink); }
+    .footer-logo .logo-prefix { color: var(--accent); }
+    footer p { font-size: .72rem; color: var(--ink-faint); font-family: var(--mono); }
+
+    #btt { position: fixed; bottom: 28px; right: 28px; width: 40px; height: 40px; background: var(--accent); border: none; border-radius: var(--radius); color: #0d1117; font-size: .9rem; font-weight: 700; cursor: pointer; opacity: 0; transform: translateY(14px); transition: opacity .3s, transform .3s; z-index: 200; box-shadow: 0 0 16px var(--accent-glow); font-family: var(--font); }
+    #btt.show { opacity: 1; transform: translateY(0); }
+    #btt:hover { box-shadow: 0 0 24px var(--accent-glow); }
+
+    @media (max-width: 600px) { .pn-nav { grid-template-columns: 1fr; } }
+
+    .toc-float { position: fixed; top: 86px; right: 20px; width: 196px; max-height: calc(100vh - 110px); overflow-y: auto; display: none; z-index: 50; padding: 14px 16px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); border-left: 3px solid var(--accent); }
+    @media (min-width: 1380px) { .toc-float { display: block; } }
+    .toc-float .toc-title { font-size: .62rem; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-faint); font-weight: 600; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border); font-family: var(--mono); }
+    .toc-float ul { list-style: none; padding: 0; }
+    .toc-float li { margin: 1px 0; }
+    .toc-float a { display: block; font-size: .7rem; color: var(--ink-faint); padding: 4px 0 4px 10px; border-left: 2px solid transparent; line-height: 1.4; transition: color .15s, border-color .15s; text-decoration: none; }
+    .toc-float a:hover { color: var(--ink); }
+    .toc-float a.active { color: var(--accent); border-left-color: var(--accent); font-weight: 500; }
+    .toc-float a[data-level="h3"] { padding-left: 20px; font-size: .66rem; }
+
+    .copy-code-btn { position: absolute; top: 10px; right: 12px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 4px; color: var(--ink-faint); cursor: pointer; font-family: var(--mono); font-size: .6rem; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; padding: 3px 10px; transition: background .15s, color .15s, border-color .15s; line-height: 1.4; }
+    .copy-code-btn:hover { background: var(--bg-surface); color: var(--ink); border-color: var(--ink-faint); }
+    .copy-code-btn.copied { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+    pre code.hljs { background: transparent; padding: 0; color: #e6edf3; }
+    .hljs-keyword, .hljs-selector-tag { color: #ff7b72; font-weight: 500; }
+    .hljs-string, .hljs-addition { color: #a5d6ff; }
+    .hljs-comment, .hljs-quote { color: #8b949e; font-style: italic; }
+    .hljs-number, .hljs-regexp, .hljs-literal { color: #79c0ff; }
+    .hljs-built_in, .hljs-type { color: #ffa657; }
+    .hljs-attr, .hljs-variable, .hljs-template-variable { color: #e3b341; }
+    .hljs-name, .hljs-tag { color: #7ee787; }
+    .hljs-meta { color: #8b949e; }
+    .hljs-title, .hljs-section { color: #d2a8ff; font-weight: 600; }
+    .hljs-deletion { color: #ffa198; }
+    .hljs-emphasis { font-style: italic; }
+    .hljs-strong { font-weight: 600; }
+  </style>
+</head>
+<body>
+<div id="progress-bar"></div>
+
+<nav>
+  <div class="nav-inner">
+    <a href="../index.html" class="logo"><span class="logo-prefix">~/</span>Pramod's Blog</a>
+    <a href="../index.html" class="back-link">← All Articles</a>
+    <button class="dark-toggle" id="darkToggle" title="Toggle dark mode">🌙</button>
+  </div>
+</nav>
+
+<div id="toc" class="toc-float"><div class="toc-title">Contents</div><ul id="tocList"></ul></div>
+
+<header class="post-hero">
+  <div class="post-tags">
+    <span class="tag tag-ai">AI</span>
+    <span class="tag tag-rag">RAG</span>
+    <span class="tag tag-k8s">Kubernetes</span>
+  </div>
+  <h1 class="post-title">Building a RAG-based Chatbot for Your Public Blog</h1>
+  <p class="post-subtitle">
+    How to turn your existing blog posts into a conversational assistant using Retrieval-Augmented
+    Generation (RAG), FAISS, Kubernetes, and a lightweight JavaScript chat widget.
+  </p>
+  <div class="post-meta">
+    <div class="author-chip">
+      <div class="author-avatar">PS</div>
+      <div>
+        <div class="author-name">Pramod Sultane</div>
+        <div class="author-title">Cloud &amp; DevOps Engineer</div>
+      </div>
+    </div>
+    <span class="meta-div">·</span>
+    <span>19 April 2026</span>
+    <span class="meta-div">·</span>
+    <span id="read-time"> 14 min read</span>
+  </div>
+</header>
+
+<article class="post-body">
+
+  <p>
+    Most blog chatbots fail for one reason: they answer with generic AI knowledge instead of your
+    actual articles. A Retrieval-Augmented Generation (RAG) pipeline fixes that by grounding every
+    answer in your existing blog posts.
+  </p>
+
+  <p>
+    In this guide, you will build a production-ready chatbot that reads your Markdown content,
+    creates embeddings, stores them in FAISS, exposes an API with FastAPI, and renders a lightweight
+    JavaScript widget directly on your blog.
+  </p>
+
+  <div class="callout info">
+    <span class="callout-icon">💡</span>
+    <p>
+      Good technical blog posts do not just explain <strong>what</strong> to build. They show
+      <strong>why</strong>, include working code, and end with something readers can copy into their
+      own project within five minutes.
+    </p>
+  </div>
+
+  <h2 id="architecture">1. High-level Architecture <a href="#architecture" class="anchor">#</a></h2>
+
+  <h3>1.1 Architecture Diagram</h3>
+
+<p>
+The following diagram shows how user queries flow through the system,
+from the browser widget to the RAG backend and vector store.
+</p>
+
+<div style="margin:20px 0; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg-surface); padding:20px; overflow:auto;">
+<svg width="100%" height="320" viewBox="0 0 900 320" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- Boxes -->
+  <rect x="20" y="120" width="160" height="60" rx="8" fill="#1c2333" stroke="#30363d"/>
+  <text x="100" y="150" text-anchor="middle" fill="#e6edf3" font-size="12">User Browser</text>
+
+  <rect x="220" y="120" width="160" height="60" rx="8" fill="#1c2333" stroke="#30363d"/>
+  <text x="300" y="150" text-anchor="middle" fill="#e6edf3" font-size="12">Chat Widget</text>
+
+  <rect x="420" y="120" width="180" height="60" rx="8" fill="#1c2333" stroke="#30363d"/>
+  <text x="510" y="150" text-anchor="middle" fill="#e6edf3" font-size="12">RAG API (FastAPI)</text>
+
+  <rect x="640" y="40" width="200" height="60" rx="8" fill="#1c2333" stroke="#30363d"/>
+  <text x="740" y="70" text-anchor="middle" fill="#e6edf3" font-size="12">LLM Provider</text>
+
+  <rect x="640" y="200" width="200" height="60" rx="8" fill="#1c2333" stroke="#30363d"/>
+  <text x="740" y="230" text-anchor="middle" fill="#e6edf3" font-size="12">FAISS Vector Store</text>
+
+  <!-- Arrows -->
+  <line x1="180" y1="150" x2="220" y2="150" stroke="#58a6ff" marker-end="url(#arrow)"/>
+  <line x1="380" y1="150" x2="420" y2="150" stroke="#58a6ff" marker-end="url(#arrow)"/>
+  <line x1="600" y1="140" x2="640" y2="90" stroke="#00ff88" marker-end="url(#arrow)"/>
+  <line x1="600" y1="160" x2="640" y2="220" stroke="#00ff88" marker-end="url(#arrow)"/>
+
+  <!-- Arrow marker -->
+  <defs>
+    <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+      <polygon points="0 0, 6 3, 0 6" fill="#58a6ff"/>
+    </marker>
+  </defs>
+
+</svg>
+</div>
+
+  <p>
+    The chatbot consists of five layers:
+  </p>
+
+  <ul>
+    <li><strong>Content Source</strong> – Markdown or MDX blog posts.</li>
+    <li><strong>Ingestion Script</strong> – extracts and chunks content.</li>
+    <li><strong>Vector Store</strong> – FAISS index containing embeddings.</li>
+    <li><strong>Backend API</strong> – retrieves relevant chunks and calls the LLM.</li>
+    <li><strong>Frontend Widget</strong> – a small floating chat interface on every page.</li>
+  </ul>
+
+  <div class="callout tip">
+    <span class="callout-icon">🚀</span>
+    <p>
+      The most important design decision is to keep the chatbot focused on your content only.
+      Always include source links in the response so readers can jump back to the original article.
+    </p>
+  </div>
+
+  <h2 id="ingestion">2. Build the Content Ingestion Pipeline <a href="#ingestion" class="anchor">#</a></h2>
+
+  <p>
+    Start by scanning your blog repository for Markdown files. This example works for folders such
+    as <code>posts/</code>, <code>content/</code>, or <code>docs/</code>.
+  </p>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>discover_posts.py</span>
+  </div>
+  <pre><code class="language-python">from pathlib import Path
+
+blog_files = []
+
+for ext in ["*.md", "*.mdx"]:
+    blog_files.extend(Path("content").rglob(ext))
+
+for file in blog_files:
+    print(file)</code></pre>
+
+  <p>
+    Once the files are discovered, remove frontmatter and split the content into chunks. Smaller
+    chunks improve retrieval accuracy because the model receives more focused context.
+  </p>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>chunk_posts.py</span>
+  </div>
+  <pre><code class="language-python">import re
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+with open("content/build-rag.md", "r", encoding="utf-8") as f:
+    raw = f.read()
+
+# Remove YAML frontmatter
+clean = re.sub(r"^---.*?---", "", raw, flags=re.S)
+
+splitter = RecursiveCharacterTextSplitter(
+    chunk_size=800,
+    chunk_overlap=120
+)
+
+chunks = splitter.split_text(clean)
+print(f"Generated {len(chunks)} chunks")</code></pre>
+
+  <h3 id="embeddings">2.1 Create Embeddings and FAISS Index</h3>
+
+  <p>
+    After chunking, convert each chunk into an embedding and store it in FAISS.
+  </p>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>build_index.py</span>
+  </div>
+  <pre><code class="language-python">from sentence_transformers import SentenceTransformer
+import faiss
+import numpy as np
+import pickle
+
+model = SentenceTransformer("all-MiniLM-L6-v2")
+embeddings = model.encode(chunks)
+
+index = faiss.IndexFlatL2(len(embeddings[0]))
+index.add(np.array(embeddings, dtype="float32"))
+
+faiss.write_index(index, "blog.index")
+
+with open("metadata.pkl", "wb") as f:
+    pickle.dump(chunks, f)</code></pre>
+
+  <div class="callout warn">
+    <span class="callout-icon">⚠️</span>
+    <p>
+      Do not store only the vector index. Save metadata too, including article title, URL, and the
+      original chunk text. Without metadata, your chatbot cannot cite the source article.
+    </p>
+  </div>
+
+  <h2 id="api">3. Create the Chat API <a href="#api" class="anchor">#</a></h2>
+
+  <h2>RAG Query Flow Visualization</h2>
+
+<p>
+The following interactive demo shows how a single user query flows
+through embedding, retrieval, and generation steps.
+</p>
+
+<div style="border:1px solid var(--border);border-radius:var(--radius);padding:20px;background:var(--bg-surface);">
+
+  <input id="ragInput" placeholder="Ask something..." 
+    style="width:100%;padding:10px;background:var(--bg-elevated);border:1px solid var(--border);color:var(--ink);border-radius:6px;" />
+
+  <button onclick="runRAGFlow()" 
+    style="margin-top:10px;padding:8px 16px;border:1px solid var(--border);background:transparent;color:var(--accent);cursor:pointer;">
+    Run RAG Flow
+  </button>
+
+  <div id="ragSteps" style="margin-top:20px;font-family:var(--mono);font-size:.8rem;"></div>
+
+</div>
+
+<script>
+function runRAGFlow() {
+  const steps = [
+    "1️⃣ User Query Received",
+    "2️⃣ Generating Embedding Vector...",
+    "3️⃣ Searching FAISS Index (Top-K)",
+    "4️⃣ Retrieving Relevant Chunks",
+    "5️⃣ Sending Context + Query to LLM",
+    "6️⃣ Generating Final Answer"
+  ];
+
+  const container = document.getElementById("ragSteps");
+  container.innerHTML = "";
+
+  let i = 0;
+
+  function showStep() {
+    if (i < steps.length) {
+      const div = document.createElement("div");
+      div.textContent = steps[i];
+      div.style.marginBottom = "8px";
+      container.appendChild(div);
+      i++;
+      setTimeout(showStep, 700);
+    }
+  }
+
+  showStep();
+}
+</script>
+
+  <p>
+    The backend can be built with FastAPI. On every request it should:
+  </p>
+
+  <ol>
+    <li>Embed the user question</li>
+    <li>Search the FAISS index</li>
+    <li>Build a prompt using the best matching chunks</li>
+    <li>Return an answer plus source URLs</li>
+  </ol>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>app.py</span>
+  </div>
+  <pre><code class="language-python">from fastapi import FastAPI
+from pydantic import BaseModel
+import faiss
+import pickle
+
+app = FastAPI()
+
+index = faiss.read_index("blog.index")
+metadata = pickle.load(open("metadata.pkl", "rb"))
+
+class ChatRequest(BaseModel):
+    message: str
+
+@app.post("/api/ask")
+def ask(req: ChatRequest):
+    # Example retrieval logic
+    question_embedding = model.encode([req.message])
+    distances, indices = index.search(question_embedding, k=3)
+
+    context = "\n\n".join(metadata[i] for i in indices[0])
+
+    return {
+        "content": f"Relevant context found:\n{context[:300]}...",
+        "sources": [
+            {
+                "title": "Building a RAG-based Chatbot",
+                "url": "/posts/rag-chatbot"
+            }
+        ]
+    }</code></pre>
+
+  <p>
+    A real implementation would replace the placeholder response with an LLM call using
+    <code>OpenAI</code>, <code>Ollama</code>, or another provider.
+  </p>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>Prompt template example</span>
+  </div>
+  <pre><code class="language-text">You are an assistant for Pramod's Blog.
+Answer only using the provided context.
+If the answer is missing, say "I could not find that in the blog posts."
+
+Context:
+{{retrieved_chunks}}
+
+Question:
+{{user_question}}</code></pre>
+
+  <h2 id="widget">4. Add the Chat Widget <a href="#widget" class="anchor">#</a></h2>
+
+  <p>
+    The widget should stay minimal. Readers do not want a full-screen chatbot; they want a small
+    helper that answers one question and gets out of the way.
+  </p>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>chat-widget.js</span>
+  </div>
+  <pre><code class="language-javascript">async function askQuestion(message) {
+  const response = await fetch('/chatbot-api/api/ask', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ message })
+  });
+
+  return response.json();
+}
+
+document.getElementById('sendBtn').addEventListener('click', async () =&gt; {
+  const input = document.getElementById('chatInput');
+  const result = await askQuestion(input.value);
+
+  document.getElementById('messages').innerHTML += `
+    &lt;div class="message bot"&gt;
+      ${result.content}
+    &lt;/div&gt;
+  `;
+});</code></pre>
+
+  <p>
+    Then include the widget in your blog template:
+  </p>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>Layout integration</span>
+  </div>
+  <pre><code class="language-html">&lt;script src="/assets/chat-widget.js" defer&gt;&lt;/script&gt;
+&lt;script&gt;
+  window.BlogChatWidgetConfig = {
+    apiBaseUrl: 'https://blog.example.com/chatbot-api'
+  };
+&lt;/script&gt;</code></pre>
+
+  <h2 id="kubernetes">5. Deploy to Kubernetes <a href="#kubernetes" class="anchor">#</a></h2>
+
+  <p>
+    Once the chatbot works locally, package it into a container and deploy it.
+  </p>
+
+  <div class="code-header">
+    <div class="code-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <span>deployment.yaml</span>
+  </div>
+  <pre><code class="language-yaml">apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blog-chatbot
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: blog-chatbot
+  template:
+    metadata:
+      labels:
+        app: blog-chatbot
+    spec:
+      containers:
+        - name: chatbot
+          image: registry.example.com/blog-chatbot:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: MODEL_NAME
+              value: gpt-4.1-mini
+            - name: FAISS_INDEX_PATH
+              value: /data/blog.index</code></pre>
+
+  <p>
+    Expose the service behind an Ingress such as <code>/chatbot-api</code> so it appears under the
+    same domain as your blog.
+  </p>
+
+  <h2 id="criteria">6. Blogging Criteria: What Makes This Post Better? <a href="#criteria" class="anchor">#</a></h2>
+
+  <p>
+    Technical posts are easier to read when they follow a predictable structure. For future posts,
+    use this checklist:
+  </p>
+
+  <ul>
+    <li>Start with the problem before showing the solution.</li>
+    <li>Keep paragraphs short: 2–4 lines each.</li>
+    <li>Use one code sample per concept.</li>
+    <li>Explain why the code matters immediately after the snippet.</li>
+    <li>Add callout boxes for warnings, tips, and trade-offs.</li>
+    <li>Always include one “production-ready” section such as monitoring or security.</li>
+    <li>End with a concrete next step the reader can implement today.</li>
+  </ul>
+
+  <div class="callout tip">
+    <span class="callout-icon">✅</span>
+    <p>
+      A great engineering article should make readers think: “I can build this today.”
+    </p>
+  </div>
+
+  <h2 id="next-steps">7. Next Steps <a href="#next-steps" class="anchor">#</a></h2>
+
+  <p>
+    Once the basic chatbot works, you can improve it further by:
+  </p>
+
+  <ul>
+    <li>Adding source citations under every answer</li>
+    <li>Streaming responses with Server-Sent Events</li>
+    <li>Caching repeated questions in Redis</li>
+    <li>Tracking latency and token cost with Prometheus and Grafana</li>
+    <li>Automatically rebuilding the FAISS index whenever a new article is published</li>
+  </ul>
+
+</article>
+```
+
+
+<div class="share-section">
+  <div class="share-inner">
+    <div class="share-label">Share this article</div>
+    <div class="share-btns">
+      <button class="share-btn" onclick="shareLinkedIn()">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.98 3.5C4.98 4.88 3.88 6 2.5 6S0 4.88 0 3.5 1.12 1 2.5 1 4.98 2.12 4.98 3.5zM.2 8.02h4.6V24H.2V8.02zm7.8 0h4.4v2.17h.06c.61-1.16 2.1-2.38 4.32-2.38 4.62 0 5.47 3.04 5.47 6.99V24h-4.6v-7.19c0-1.72-.03-3.93-2.4-3.93-2.4 0-2.77 1.88-2.77 3.81V24H8V8.02z"/></svg>
+        LinkedIn
+      </button>
+      <button class="share-btn" onclick="shareTwitter()">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.633 7.997c.013.176.013.353.013.53 0 5.386-4.098 11.6-11.6 11.6-2.306 0-4.453-.676-6.26-1.84.321.038.63.051.964.051a8.18 8.18 0 0 0 5.074-1.748 4.087 4.087 0 0 1-3.817-2.837c.25.038.5.064.763.064.368 0 .736-.051 1.079-.14A4.077 4.077 0 0 1 .8 9.84v-.051c.54.304 1.166.49 1.83.515A4.07 4.07 0 0 1 .83 6.902c0-.753.202-1.447.556-2.048a11.6 11.6 0 0 0 8.42 4.272 4.6 4.6 0 0 1-.101-.933 4.076 4.076 0 0 1 7.054-2.79 8.01 8.01 0 0 0 2.588-.987 4.08 4.08 0 0 1-1.79 2.253 8.17 8.17 0 0 0 2.347-.64 8.78 8.78 0 0 1-2.271 2.36z"/></svg>
+        Twitter
+      </button>
+      <button class="share-btn" onclick="copyLink()" id="copyLinkBtn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v16h13c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 18H8V7h11v16z"/></svg>
+        Copy link
+      </button>
+    </div>
+  </div>
+</div>
+
+<nav class="pn-nav">
+  <a href="green-cicd-energy.html" class="pn-link prev">
+    <div class="pn-dir">Previous</div>
+    <div class="pn-title">Every CI/CD pipeline run costs energy</div>
+  </a>
+  <a href="prometheus-grafana-k8s.html" class="pn-link next">
+    <div class="pn-dir">Next</div>
+    <div class="pn-title">Monitoring Kubernetes with Prometheus and Grafana</div>
+  </a>
+</nav>
+
+<div class="post-footer">
+  <div class="post-footer-inner">
+    <button class="back-btn" onclick="window.location.href='../index.html'">← Back to all posts</button>
+    <span style="font-size:.8rem;color:var(--ink-faint);font-family:var(--mono);">Thanks for reading — feedback is welcome!</span>
+  </div>
+</div>
+
+<footer>
+  <div class="footer-inner">
+    <div class="footer-logo"><span class="logo-prefix">~/</span>Pramod's Blog</div>
+    <p>Built with static HTML, CSS, and a bit of JavaScript.</p>
+  </div>
+</footer>
+
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="Back to top">↑</button>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>
+  const bar = document.getElementById('progress-bar');
+  window.addEventListener('scroll', () => {
+    const scrollTop = window.scrollY || document.documentElement.scrollTop;
+    const docHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+    const progress = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+    bar.style.width = progress + '%';
+    document.getElementById('btt').classList.toggle('show', window.scrollY > 400);
+  });
+
+  const words = document.querySelector('.post-body').innerText.trim().split(/\s+/).length;
+  document.getElementById('read-time').textContent = Math.max(1, Math.round(words / 200)) + ' min read';
+
+  function shareLinkedIn() {
+    const url = encodeURIComponent(window.location.href);
+    const title = encodeURIComponent(document.title);
+    window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${url}&title=${title}`, '_blank');
+  }
+  function shareTwitter() {
+    const url = encodeURIComponent(window.location.href);
+    const text = encodeURIComponent(document.title + ' #RAG #chatbot');
+    window.open(`https://twitter.com/intent/tweet?url=${url}&text=${text}`, '_blank');
+  }
+  function copyLink() {
+    const btn = document.getElementById('copyLinkBtn');
+    navigator.clipboard.writeText(window.location.href).then(() => {
+      btn.classList.add('copied');
+      btn.textContent = 'Copied!';
+      setTimeout(() => {
+        btn.classList.remove('copied');
+        btn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v16h13c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 18H8V7h11v16z"/></svg> Copy link';
+      }, 1800);
+    });
+  }
+
+  const darkToggle = document.getElementById('darkToggle');
+  function applyTheme(dark) {
+    document.body.classList.toggle('dark', dark);
+    document.body.classList.toggle('light', !dark);
+    localStorage.setItem('darkMode', dark ? 'true' : 'false');
+  }
+  const saved = localStorage.getItem('darkMode');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  applyTheme(saved !== null ? saved === 'true' : prefersDark);
+  darkToggle.addEventListener('click', () => applyTheme(!document.body.classList.contains('dark')));
+
+  if (typeof hljs !== 'undefined') {
+    document.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+  }
+
+  document.querySelectorAll('pre').forEach(pre => {
+    const code = pre.querySelector('code');
+    if (!code) return;
+    const btn = document.createElement('button');
+    btn.className = 'copy-code-btn';
+    btn.textContent = 'Copy';
+    btn.addEventListener('click', () => {
+      const text = code.innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        btn.classList.add('copied');
+        btn.textContent = 'Copied!';
+        setTimeout(() => {
+          btn.classList.remove('copied');
+          btn.textContent = 'Copy';
+        }, 1500);
+      });
+    });
+    pre.appendChild(btn);
+  });
+
+  (function() {
+    const tocList = document.getElementById('tocList');
+    if (!tocList) return;
+    const headings = document.querySelectorAll('.post-body h2, .post-body h3');
+    headings.forEach(h => {
+      const id = h.id || h.textContent.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-');
+      h.id = id;
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      a.href = `#${id}`;
+      a.textContent = h.textContent.replace(/#/g, '').trim();
+      a.dataset.level = h.tagName.toLowerCase();
+      li.appendChild(a);
+      tocList.appendChild(li);
+    });
+
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        const id = entry.target.id;
+        const link = tocList.querySelector(`a[href="#${id}"]`);
+        if (link) {
+          if (entry.isIntersecting) {
+            tocList.querySelectorAll('a').forEach(a => a.classList.remove('active'));
+            link.classList.add('active');
+          }
+        }
+      });
+    }, { rootMargin: '0px 0px -70% 0px', threshold: 0.1 });
+
+    headings.forEach(h => observer.observe(h));
+  })();
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Home') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  });
+</script>
+
+</body>
+</html>
