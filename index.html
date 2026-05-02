@@ -307,6 +307,9 @@
     .tag-tf     { border-color: #5a1e9c; background: rgba(188,140,255,.1); color: #bc8cff; }
     .tag-github { border-color: #30363d; background: var(--bg-elevated);  color: #8b949e; }
     .tag-iam    { border-color: #5c3a1a; background: rgba(255,153,0,.1);   color: #ffa657; }
+    .tag-ai     { border-color: #5a1e9c; background: rgba(188,140,255,.1); color: #bc8cff; }
+    .tag-prompt { border-color: #1a5c3a; background: rgba(0,255,136,.08); color: #00d46a; }
+    .tag-llm    { border-color: #1d4e89; background: rgba(29,78,137,.15); color: #58a6ff; }
 
     .badge-new {
       display: inline-flex; align-items: center;
@@ -353,6 +356,7 @@
     .post-card[data-tags~="observability"]{ --card-accent: var(--yellow); }
     .post-card[data-tags~="iac"]         { --card-accent: var(--purple); }
     .post-card[data-tags~="kubernetes"]  { --card-accent: var(--cyan); }
+    .post-card[data-tags~="ai"]          { --card-accent: var(--purple); }
     .post-card:hover { border-left-color: var(--card-accent, var(--accent)); }
 
     .card-thumb { display: none; }
@@ -511,6 +515,7 @@
       <button class="tag-btn" data-tag="security">Security</button>
       <button class="tag-btn" data-tag="linux">Linux</button>
       <button class="tag-btn" data-tag="keycloak">Keycloak</button>
+      <button class="tag-btn" data-tag="ai">AI</button>
     </div>
   </div>
 </section>
@@ -526,6 +531,30 @@
 
     <div class="post-grid" id="postGrid">
 
+      <!-- Card 0 — 2 May 2026 -->
+      <a href="posts/prompt-engineering-ai.html" style="display:contents">
+        <article class="post-card" data-tags="ai llm">
+          <div class="card-thumb"><span>✨</span></div>
+          <div class="card-body">
+            <div class="card-tags">
+              <span class="tag tag-ai">AI</span>
+              <span class="tag tag-prompt">Prompting</span>
+              <span class="tag tag-llm">LLM</span>
+              <span class="badge-new">New</span>
+            </div>
+            <h3>Prompt Engineering: The Art and Science of Talking to AI</h3>
+            <p>A practical guide to giving AI models better direction, structure, examples, and feedback so they produce useful results consistently.</p>
+            <div class="card-meta">
+              <span class="card-date">4 May 2026</span>
+              <span class="card-meta-sep">·</span>
+              <span>9 min read</span>
+              <span class="card-meta-sep">·</span>
+              <span class="card-read-link">Read →</span>
+            </div>
+          </div>
+        </article>
+      </a>
+
             <!-- Card 1 — 19 Apr 2026 -->
       <a href="posts/rag-chatbot-docs.html" style="display:contents">
         <article class="post-card" data-tags="cicd kubernetes observability security">
@@ -537,7 +566,6 @@
               <span class="tag tag-obs">Observability</span>
               <span class="tag tag-sec">Security</span>
               <span class="tag tag-chatbot">ChatBot</span>
-              <span class="badge-new">New</span>
             </div>
             <h3>Building a RAG-based Chatbot for Your Public Blog</h3>
             <p>End-to-end architecture for a retrieval-augmented chatbot that indexes your blog posts, runs on Kubernetes, and safely answers questions using Azure OpenAI.</p>
