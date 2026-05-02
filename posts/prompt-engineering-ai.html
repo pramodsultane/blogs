@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Prompt Engineering: The Art and Science of Talking to AI — Pramod's Blogs</title>
+  <meta name="description" content="A practical guide to prompt engineering: direction, format, examples, evaluation, and dividing work into better AI workflows." />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230d1117'/><text x='16' y='23' font-family='JetBrains Mono,monospace' font-size='16' font-weight='700' fill='%2300ff88' text-anchor='middle'>PS</text></svg>" />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --font: 'Inter', system-ui, sans-serif; --mono: 'JetBrains Mono', 'Fira Code', monospace;
+      --bg: #0d1117; --bg-surface: #161b22; --bg-elevated: #1c2333;
+      --border: #30363d; --border-subtle: #21262d;
+      --ink: #e6edf3; --ink-mid: #8b949e; --ink-faint: #484f58;
+      --accent: #00ff88; --accent-dim: rgba(0,255,136,.12); --accent-glow: rgba(0,255,136,.25);
+      --cyan: #58a6ff; --yellow: #e3b341; --purple: #bc8cff; --orange: #ff7b72; --radius: 6px;
+    }
+    @media (prefers-color-scheme: light) {
+      :root { --bg: #fff; --bg-surface: #f6f8fa; --bg-elevated: #eaeef2; --border: #d0d7de; --border-subtle: #e8ecf0; --ink: #1f2328; --ink-mid: #656d76; --ink-faint: #9198a1; --accent: #1a7f37; --accent-dim: rgba(0,180,80,.1); --accent-glow: rgba(0,180,80,.2); --cyan: #0969da; }
+    }
+    body.dark { --bg: #0d1117; --bg-surface: #161b22; --bg-elevated: #1c2333; --border: #30363d; --border-subtle: #21262d; --ink: #e6edf3; --ink-mid: #8b949e; --ink-faint: #484f58; --accent: #00ff88; --accent-dim: rgba(0,255,136,.12); --accent-glow: rgba(0,255,136,.25); --cyan: #58a6ff; }
+    body.light { --bg: #fff; --bg-surface: #f6f8fa; --bg-elevated: #eaeef2; --border: #d0d7de; --border-subtle: #e8ecf0; --ink: #1f2328; --ink-mid: #656d76; --ink-faint: #9198a1; --accent: #1a7f37; --accent-dim: rgba(0,180,80,.1); --accent-glow: rgba(0,180,80,.2); --cyan: #0969da; }
+    html { scroll-behavior: smooth; }
+    body { font-family: var(--font); background: var(--bg); color: var(--ink); line-height: 1.75; font-size: 1rem; -webkit-font-smoothing: antialiased; }
+    a { color: inherit; text-decoration: none; }
+    nav { position: sticky; top: 0; z-index: 100; background: rgba(13,17,23,.88); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); padding: 0 clamp(1.5rem,6vw,5rem); }
+    body.light nav { background: rgba(255,255,255,.93); }
+    .nav-inner { max-width: 900px; margin: auto; height: 60px; display: flex; align-items: center; justify-content: space-between; }
+    .logo { font-family: var(--mono); font-size: 1rem; font-weight: 600; color: var(--ink); }
+    .logo-prefix { color: var(--accent); }
+    .back-link { font-family: var(--mono); font-size: .75rem; color: var(--ink-faint); font-weight: 500; letter-spacing: .04em; transition: color .15s; }
+    .back-link:hover { color: var(--accent); }
+    .dark-toggle { background: none; border: 1px solid var(--border); border-radius: var(--radius); width: 34px; height: 34px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--ink-faint); transition: border-color .15s, color .15s; flex-shrink: 0; padding: 0; font-size: .95rem; }
+    .dark-toggle:hover { border-color: var(--accent); color: var(--accent); }
+    #progress-bar { position: fixed; top: 0; left: 0; height: 2px; width: 0%; background: var(--accent); z-index: 9999; transition: width .08s linear; pointer-events: none; box-shadow: 0 0 8px var(--accent-glow); }
+    .tag { font-size: .62rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); color: var(--ink-mid); background: var(--bg-surface); }
+    .tag-ai { border-color: #5a1e9c; background: rgba(188,140,255,.1); color: #bc8cff; }
+    .tag-prompt { border-color: #1a5c3a; background: rgba(0,255,136,.08); color: #00d46a; }
+    .tag-llm { border-color: #1d4e89; background: rgba(29,78,137,.15); color: #58a6ff; }
+    .post-hero { padding: 56px clamp(1.5rem,6vw,5rem) 34px; max-width: 900px; margin: auto; }
+    .post-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 20px; }
+    .post-title { font-size: clamp(1.8rem,4vw,2.8rem); font-weight: 700; line-height: 1.15; letter-spacing: -.5px; margin-bottom: 16px; color: var(--ink); }
+    .post-subtitle { font-size: 1rem; color: var(--ink-mid); line-height: 1.75; margin-bottom: 28px; }
+    .post-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 14px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); font-size: .78rem; color: var(--ink-faint); font-family: var(--mono); }
+    .author-chip { display: flex; align-items: center; gap: 9px; }
+    .author-avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, var(--bg-elevated), var(--bg-surface)); border: 2px solid var(--accent); display: flex; align-items: center; justify-content: center; font-size: .65rem; font-weight: 700; color: var(--accent); font-family: var(--mono); }
+    .author-name { font-size: .85rem; font-weight: 600; color: var(--ink); font-family: var(--font); }
+    .author-title { font-size: .72rem; color: var(--ink-faint); }
+    .meta-div { color: var(--border); }
+    .post-body { max-width: 900px; margin: 0 auto; padding: 10px clamp(1.5rem,6vw,5rem) 80px; }
+    .hero-image { margin: 10px 0 34px; padding: 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-surface); box-shadow: 0 14px 40px rgba(0,0,0,.18); }
+    .hero-image img { display: block; width: 100%; height: auto; border-radius: 4px; }
+    .caption { margin-top: 10px; font-size: .75rem; color: var(--ink-faint); text-align: center; font-family: var(--mono); }
+    .post-body h2 { font-size: 1.5rem; font-weight: 700; margin: 52px 0 16px; letter-spacing: -.3px; padding-bottom: 10px; border-bottom: 1px solid var(--border); color: var(--ink); }
+    .post-body h3 { font-size: 1.15rem; font-weight: 700; margin: 34px 0 10px; color: var(--ink); }
+    .post-body p { margin-bottom: 16px; color: var(--ink-mid); }
+    .post-body ul, .post-body ol { padding-left: 1.4rem; margin-bottom: 16px; color: var(--ink-mid); }
+    .post-body li { margin-bottom: 6px; }
+    .post-body strong { color: var(--ink); font-weight: 600; }
+    .post-body code { font-family: var(--mono); background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-size: .82em; color: var(--accent); }
+    blockquote { margin: 22px 0; padding: 16px 18px; border-left: 3px solid var(--accent); background: var(--accent-dim); color: var(--ink-mid); border-radius: var(--radius); }
+    .prompt-box { margin: 18px 0 26px; padding: 18px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--radius); background: var(--bg-surface); font-family: var(--mono); font-size: .86rem; color: var(--ink-mid); white-space: pre-wrap; }
+    .post-footer { max-width: 900px; margin: 0 auto 60px; padding: 0 clamp(1.5rem,6vw,5rem); }
+    .post-footer-inner { border-top: 1px solid var(--border); padding-top: 32px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
+    .back-btn { display: inline-flex; align-items: center; gap: 7px; background: transparent; border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 20px; font-size: .75rem; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-mid); transition: border-color .15s, color .15s; }
+    .back-btn:hover { border-color: var(--accent); color: var(--accent); }
+    footer { border-top: 1px solid var(--border); padding: 28px clamp(1.5rem,6vw,5rem); }
+    .footer-inner { max-width: 900px; margin: auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+    .footer-logo { font-family: var(--mono); font-weight: 600; font-size: .95rem; color: var(--ink); }
+    footer p { font-size: .72rem; color: var(--ink-faint); font-family: var(--mono); }
+    #btt { position: fixed; bottom: 28px; right: 28px; width: 40px; height: 40px; background: var(--accent); border: none; border-radius: var(--radius); color: #0d1117; font-size: .9rem; font-weight: 700; cursor: pointer; opacity: 0; transform: translateY(14px); transition: opacity .3s, transform .3s; z-index: 200; box-shadow: 0 0 16px var(--accent-glow); }
+    #btt.show { opacity: 1; transform: translateY(0); }
+    .toc-float { position: fixed; top: 86px; right: 20px; width: 196px; max-height: calc(100vh - 110px); overflow-y: auto; display: none; z-index: 50; padding: 14px 16px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); border-left: 3px solid var(--accent); }
+    @media (min-width: 1380px) { .toc-float { display: block; } }
+    .toc-title { font-size: .62rem; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-faint); font-weight: 600; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border); font-family: var(--mono); }
+    .toc-float ul { list-style: none; padding: 0; }
+    .toc-float a { display: block; font-size: .7rem; color: var(--ink-faint); padding: 4px 0 4px 10px; border-left: 2px solid transparent; line-height: 1.4; transition: color .15s, border-color .15s; }
+    .toc-float a:hover { color: var(--ink); }
+    .toc-float a.active { color: var(--accent); border-left-color: var(--accent); }
+  </style>
+</head>
+<body>
+<div id="progress-bar"></div>
+<nav>
+  <div class="nav-inner">
+    <a href="../index.html" class="logo"><span class="logo-prefix">~/</span>Pramod's Blog</a>
+    <a href="../index.html" class="back-link">← All Articles</a>
+    <button class="dark-toggle" id="darkToggle" title="Toggle dark mode">🌙</button>
+  </div>
+</nav>
+<div id="toc" class="toc-float"><div class="toc-title">Contents</div><ul id="tocList"></ul></div>
+<header class="post-hero">
+  <div class="post-tags"><span class="tag tag-ai">AI</span><span class="tag tag-prompt">Prompting</span><span class="tag tag-llm">LLM</span></div>
+  <h1 class="post-title">Prompt Engineering: The Art and Science of Talking to AI</h1>
+  <p class="post-subtitle">How to give AI models the right direction, structure, examples, and feedback so they produce useful results consistently.</p>
+  <div class="post-meta">
+    <div class="author-chip"><div class="author-avatar">PS</div><div><div class="author-name">Pramod Sultane</div><div class="author-title">Cloud &amp; DevOps Engineer</div></div></div>
+    <span class="meta-div">·</span><span>4 May 2026</span><span class="meta-div">·</span><span id="read-time">9 min read</span>
+  </div>
+</header>
+<article class="post-body">
+  <figure class="hero-image">
+    <img src="img/prompt_engineering_end_to_end_flow.svg" alt="Prompt engineering end-to-end flow diagram" />
+    <figcaption class="caption">Prompt engineering flow: raw request → structured prompt → model output → evaluation loop.</figcaption>
+  </figure>
+
+  <p>Imagine hiring the world's most knowledgeable assistant — someone who has read virtually everything ever written, speaks every language, and can code, write, analyze, summarize, and create on demand. Now imagine that this assistant gives completely different results depending on how you phrase your request. That is exactly what working with AI feels like today.</p>
+  <p><strong>Prompt engineering</strong> is the skill of getting consistently great results from that assistant. Whether you are a developer building AI-powered products, a marketer generating copy at scale, or a professional trying to save time, knowing how to work effectively with AI is fast becoming as fundamental as knowing how to use a spreadsheet.</p>
+  <p>This guide walks through what prompt engineering is, why it matters, how strong practitioners approach it, and the practical techniques you can start applying right now.</p>
+
+  <h2 id="what-is-prompt-engineering">What Is Prompt Engineering?</h2>
+  <p>At its core, prompt engineering is the process of discovering prompts that reliably yield useful or desired results.</p>
+  <p>A prompt is simply the input you provide to an AI model — text, image, audio, documents, instructions, or a combination of context and rules. When you type a question into ChatGPT or Gemini, or ask an image model to generate a visual, you are writing a prompt. Prompt engineering is the discipline of doing that well.</p>
+  <p>Large language models work by predicting the next token in a sequence based on everything that came before it. A token is roughly a small chunk of text, often about three-quarters of a word. The crucial insight is this: <strong>what you put in your prompt changes the probability of every token generated in the response</strong>. An average prompt yields an average response. A well-engineered prompt can unlock results that feel almost magical.</p>
+  <p>These models have absorbed patterns from enormous amounts of text and can emulate many formats, styles, and workflows — if you know the right way to ask.</p>
+
+  <h2 id="why-it-matters">Why Does Prompt Engineering Matter?</h2>
+  <p>Consider a simple example. You want an AI to generate product names for a shoe that fits any foot size. A naive prompt might be:</p>
+  <div class="prompt-box">Can I have a list of product names for a pair of shoes that can fit any foot size?</div>
+  <p>You will get something back. It might even be decent. But this approach has several problems, especially if you are building a real product or repeatable workflow:</p>
+  <ul>
+    <li><strong>Vague direction:</strong> you have not told the AI what style of name you want — single word, invented word, premium tone, playful tone, or a specific brand voice.</li>
+    <li><strong>Unformatted output:</strong> the response may vary each time: numbered list, paragraphs, commentary, or an inconsistent structure that is hard to parse programmatically.</li>
+    <li><strong>No examples:</strong> without guidance, the AI averages across its broad training patterns, which may not match your taste or goals.</li>
+    <li><strong>No evaluation:</strong> you have no systematic way to decide which names are good, so every result requires manual review.</li>
+    <li><strong>No task division:</strong> you are asking one prompt to do creative, strategic, and quality-control work without any structure.</li>
+  </ul>
+  <p>Now compare that with a prompt that specifies the desired style, output format, target audience, and examples. The result becomes more consistent, structured, and useful. This is the power of prompt engineering.</p>
+
+  <h2 id="five-principles">The Five Principles of Prompting</h2>
+  <p>Across generative AI research and hands-on practice, a consistent set of principles has emerged. These five principles form the backbone of effective AI communication.</p>
+
+  <h3 id="direction">1. Give Direction</h3>
+  <p>Without context, an AI model is essentially guessing. Giving direction means briefing the AI the way you would brief a human colleague. Include the goal, audience, constraints, tone, role, and business context.</p>
+  <p>One powerful direction technique is <strong>role prompting</strong>: asking the AI to respond as a specific expert, persona, or point of view. The difference between asking for “product names” and asking for “product names in the style of a premium product strategist” can be significant.</p>
+  <div class="prompt-box">Act as a senior brand strategist. Generate 10 premium, memorable product names for a shoe that automatically adapts to any foot size. Keep names short, modern, and easy to pronounce.</div>
+  <p>Another technique is <strong>prewarming</strong>, sometimes called internal retrieval. First ask the AI to describe best practices for a task, then ask it to apply those best practices to the actual output. In effect, you use the model to generate part of its own direction before it performs the work.</p>
+  <div class="prompt-box">First, list the criteria for an excellent product name in the footwear industry. Then use those criteria to generate 10 names for a shoe that fits any foot size.</div>
+  <p><strong>Rule of thumb:</strong> think about what context a human expert would need to complete the task well, then include that context in the prompt.</p>
+
+  <h3 id="format">2. Specify Format</h3>
+  <p>AI models are universal translators in many ways. They can return prose, JSON, YAML, tables, bullet points, Python code, shell commands, haiku, email copy, or structured analysis. A key part of prompt engineering is telling the model exactly what format you need.</p>
+  <p>This is critical in production software. If downstream code expects a comma-separated list and the model returns a numbered paragraph instead, you have a bug. Specifying format reduces that variability.</p>
+  <p>For developers, requesting JSON output is often a practical standard because it is easy to parse and validate:</p>
+  <div class="prompt-box">Return the results as valid JSON only. Do not include Markdown fences, backticks, comments, or additional explanation.</div>
+  <p>You can also specify output length, tone, structure, field names, accepted values, and what not to include. The more explicit you are about the format, the more reliable the result becomes.</p>
+
+  <h3 id="examples">3. Provide Examples</h3>
+  <p>This principle comes from the idea of few-shot learning. Providing even one example alongside a prompt can dramatically improve the output because it calibrates the model to your desired style and pattern.</p>
+  <ul>
+    <li><strong>Zero-shot:</strong> no examples are provided; the model infers the task entirely from the instruction.</li>
+    <li><strong>One-shot:</strong> one example is provided; this often improves consistency noticeably.</li>
+    <li><strong>Few-shot:</strong> multiple examples are provided; this usually makes output more reliable and repeatable.</li>
+  </ul>
+  <p>Examples help the AI align with your taste rather than averaging across broad internet patterns. The key is choosing examples that are diverse enough to cover edge cases but consistent enough to guide the model's style.</p>
+  <p>A caution: too many examples can constrain creativity. After three to five examples, responses may become very reliable but more formulaic. Choose the balance that fits your use case.</p>
+
+  <h3 id="evaluation">4. Evaluate Quality</h3>
+  <p>Without a feedback loop, you are flying blind. Evaluation turns prompt engineering from guesswork into a systematic discipline.</p>
+  <p>A simple starting point is to run a prompt 5–10 times and rate each output with a thumbs up or thumbs down. This quickly reveals failure modes that a single test would miss. From there, use more rigorous checks:</p>
+  <ul>
+    <li><strong>Cost and latency:</strong> is the prompt efficient enough for production?</li>
+    <li><strong>Classification accuracy:</strong> how often does the model categorize inputs correctly?</li>
+    <li><strong>Hallucination detection:</strong> how often does the model invent facts not present in the prompt or trusted context?</li>
+    <li><strong>Format compliance:</strong> does the model consistently return the structure you requested?</li>
+    <li><strong>A/B testing:</strong> compare prompt variants across many runs to identify the better performer.</li>
+  </ul>
+  <p>Professionals do not rely on one lucky response. They measure, compare, and iterate.</p>
+
+  <h3 id="divide-labor">5. Divide Labor</h3>
+  <p>As tasks grow more complex, a single prompt starts to buckle under too many requirements. The final principle is task decomposition: breaking a complex goal into smaller, chained AI calls.</p>
+  <p>A simple single-prompt technique is to ask the model to reason step by step before answering. This gives the model more room to work through complex tasks. For product workflows, a stronger approach is to chain multiple focused steps:</p>
+  <ol>
+    <li>Generate a list of product names.</li>
+    <li>Rate those names against specific criteria.</li>
+    <li>Pass the best name into another prompt to create a product description.</li>
+    <li>Use that description to generate an image prompt for a visual AI tool.</li>
+    <li>Review and format the final result for publishing.</li>
+  </ol>
+  <p>This approach — often called AI chaining or meta-prompting — is how many serious AI applications are built under the hood. Frameworks such as LangChain were created to manage and structure these multi-step workflows.</p>
+
+  <h2 id="good-vs-bad-prompt">Good Prompt vs. Bad Prompt</h2>
+  <p>Here is a concrete illustration of the difference good prompt engineering makes.</p>
+  <h3 id="weak-prompt">Weak Prompt</h3>
+  <div class="prompt-box">Write me a marketing email about our new shoes.</div>
+  <p><strong>What is wrong:</strong> there is no audience, tone, length, call to action, or output format. The model must make many assumptions and may return something generic or off-brand.</p>
+
+  <h3 id="strong-prompt">Strong Prompt</h3>
+  <div class="prompt-box">Write a 150-word marketing email for our new FlexFit shoes — a shoe that fits any foot size. The audience is busy professionals aged 25–45 who value convenience. Use a confident, conversational tone. The subject line should create curiosity. End with a clear call to action linking to our website. Return only the subject line and email body, no additional commentary.</div>
+  <p><strong>Why it works:</strong> it provides the audience, product context, tone, length, structure, format, and goal. The output has a much better chance of being useful on the first try.</p>
+
+  <h2 id="practical-tips">Practical Tips and Best Practices</h2>
+  <ul>
+    <li><strong>Be specific about what you want:</strong> ambiguity is the enemy of reliable AI output.</li>
+    <li><strong>Specify what not to include:</strong> negative constraints reduce noise and unwanted commentary.</li>
+    <li><strong>Use personas:</strong> roles activate relevant patterns, terminology, and decision criteria.</li>
+    <li><strong>Request structured output:</strong> JSON, YAML, tables, and templates are easier to validate and reuse.</li>
+    <li><strong>Use examples:</strong> examples teach the model your preferred style faster than abstract instructions alone.</li>
+    <li><strong>Start simple, then iterate:</strong> add constraints only where they improve reliability.</li>
+    <li><strong>Test repeatedly:</strong> one good response does not prove a prompt is production-ready.</li>
+    <li><strong>Watch token costs:</strong> every prompt, example, context block, and response consumes tokens.</li>
+  </ul>
+
+  <h2 id="bigger-picture">The Bigger Picture</h2>
+  <p>Models will keep changing. GPT, Claude, Gemini, Llama, and future systems all have different strengths and quirks. But the fundamentals remain stable: give direction, specify format, provide examples, evaluate quality, and divide labor.</p>
+  <blockquote>Prompts are instructions, not searches. Treat the AI like a talented but context-blind teammate who needs a clear brief.</blockquote>
+
+  <h2 id="conclusion">Conclusion</h2>
+  <p>Prompt engineering is not magic. It is a learnable discipline for communicating clearly with AI systems and measuring whether they are doing the job well.</p>
+  <p>The best prompt engineers are not necessarily the most technical people in the room. They are the people who understand what they want, can communicate it precisely, and build feedback loops to improve the result.</p>
+  <p>As AI becomes part of more products and workflows, prompt engineering will become less like a niche trick and more like a core digital skill. The better you learn to brief AI systems, the more useful they become.</p>
+</article>
+<div class="post-footer"><div class="post-footer-inner"><a href="../index.html" class="back-btn">← Back to all posts</a><span style="font-size:.73rem;color:var(--ink-faint);">Pramod's Blogs</span></div></div>
+<footer><div class="footer-inner"><div class="footer-logo"><span class="logo-prefix">~/</span>Pramod's Blog</div><p>© 2026 · Practical cloud &amp; DevOps engineering.</p></div></footer>
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="Back to top">↑</button>
+<script>
+  const bar = document.getElementById('progress-bar');
+  window.addEventListener('scroll', () => {
+    const pct = window.scrollY / (document.documentElement.scrollHeight - window.innerHeight) * 100;
+    bar.style.width = Math.min(pct, 100) + '%';
+    document.getElementById('btt').classList.toggle('show', window.scrollY > 400);
+  });
+  const words = document.querySelector('.post-body').innerText.trim().split(/\s+/).length;
+  document.getElementById('read-time').textContent = Math.max(1, Math.round(words / 200)) + ' min read';
+  const darkToggle = document.getElementById('darkToggle');
+  function applyTheme(dark) {
+    document.body.classList.toggle('dark', dark);
+    document.body.classList.toggle('light', !dark);
+    darkToggle.textContent = dark ? '☀' : '🌙';
+    localStorage.setItem('darkMode', dark);
+  }
+  const saved = localStorage.getItem('darkMode');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  applyTheme(saved !== null ? saved === 'true' : prefersDark);
+  darkToggle.addEventListener('click', () => applyTheme(!document.body.classList.contains('dark')));
+  (function() {
+    var headings = Array.from(document.querySelectorAll('.post-body h2, .post-body h3'));
+    var tocList = document.getElementById('tocList');
+    headings.forEach(function(h) {
+      var li = document.createElement('li');
+      var a = document.createElement('a');
+      a.href = '#' + h.id;
+      a.textContent = h.textContent.trim();
+      li.appendChild(a);
+      tocList.appendChild(li);
+    });
+    var observer = new IntersectionObserver(function(entries) {
+      entries.forEach(function(e) {
+        var link = tocList.querySelector('a[href="#' + e.target.id + '"]');
+        if (link) link.classList.toggle('active', e.isIntersecting);
+      });
+    }, { rootMargin: '-5% 0px -80% 0px', threshold: 0 });
+    headings.forEach(function(h) { observer.observe(h); });
+  })();
+</script>
+</body>
+</html>
