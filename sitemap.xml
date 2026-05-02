@@ -4,9 +4,16 @@
 
   <url>
     <loc>https://pramodsblogs.com/</loc>
-    <lastmod>2026-03-06</lastmod>
+    <lastmod>2026-05-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
+  </url>
+
+  <url>
+    <loc>https://pramodsblogs.com/posts/prompt-engineering-ai.html</loc>
+    <lastmod>2026-05-02</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
   </url>
 
   <url>
